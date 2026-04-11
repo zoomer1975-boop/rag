@@ -1,0 +1,135 @@
+.heading {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.desc {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+  line-height: 1.7;
+}
+
+.desc code {
+  background: var(--color-surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-accent);
+}
+
+.codeBlock {
+  position: relative;
+  background: #0d0f17;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 20px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #a5b4fc;
+}
+
+.copyBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 0.15s;
+}
+
+.copyBtn:hover {
+  border-color: var(--color-accent);
+}
+
+.preview {
+  margin-top: 4px;
+}
+
+.previewHeading {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mockWidget {
+  width: 320px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+}
+
+.mockHeader {
+  background: var(--accent, #6366f1);
+  color: #fff;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mockBody {
+  background: var(--color-surface-2);
+  padding: 16px;
+  min-height: 100px;
+}
+
+.mockBubble {
+  display: inline-block;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px 12px 12px 2px;
+  padding: 10px 14px;
+  font-size: 13px;
+  max-width: 240px;
+}
+
+.mockFooter {
+  background: var(--color-surface);
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.mockInput {
+  flex: 1;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  color: var(--color-text);
+  padding: 8px 14px;
+  font-size: 13px;
+  outline: none;
+}
+
+.mockSend {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
