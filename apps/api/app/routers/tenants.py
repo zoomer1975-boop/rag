@@ -1,7 +1,14 @@
 """테넌트 관리 API"""
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+
+_DOMAIN_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
+    re.IGNORECASE,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,12 +145,16 @@ async def add_domain(
 
     domains = tenant.allowed_domain_list
     domain = body.domain.strip().lower()
-    if domain not in domains:
-        domains.append(domain)
-        tenant.allowed_domains = ",".join(domains)
-        await db.flush()
-        await db.refresh(tenant)
-        await db.commit()
+    if not _DOMAIN_RE.match(domain):
+        raise HTTPException(status_code=400, detail="유효하지 않은 도메인 형식입니다.")
+    if domain in domains:
+        return tenant  # already present — idempotent
+
+    domains.append(domain)
+    tenant.allowed_domains = ",".join(domains)
+    await db.flush()
+    await db.refresh(tenant)
+    await db.commit()
     return tenant
 
 

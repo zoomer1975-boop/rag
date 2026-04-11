@@ -82,8 +82,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     }
   }
 
-  async function addDomain(e: React.FormEvent) {
-    e.preventDefault();
+  async function addDomain() {
     const domain = newDomain.trim().toLowerCase();
     if (!domain) return;
     setDomainSaving(true);
@@ -241,18 +240,19 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>등록된 도메인 없음</span>
           )}
         </div>
-        <form onSubmit={addDomain} className={styles.domainAdd}>
+        <div className={styles.domainAdd}>
           <input
             className={styles.input}
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             placeholder="example.com"
             style={{ flex: 1 }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }}
           />
-          <button type="submit" className={styles.btnPrimary} disabled={domainSaving || !newDomain.trim()}>
+          <button type="button" className={styles.btnPrimary} disabled={domainSaving || !newDomain.trim()} onClick={addDomain}>
             추가
           </button>
-        </form>
+        </div>
       </fieldset>
 
       <div className={styles.footer}>

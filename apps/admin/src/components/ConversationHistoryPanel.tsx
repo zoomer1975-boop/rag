@@ -19,10 +19,13 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [msgError, setMsgError] = useState<string | null>(null);
 
   const loadConversations = useCallback(
     async (newOffset: number) => {
       setLoading(true);
+      setError(null);
       try {
         const data = await apiFetch<Conversation[]>(
           `/analytics/conversations?limit=${PAGE_SIZE}&offset=${newOffset}`,
@@ -34,7 +37,9 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
           setConversations((prev) => [...prev, ...data]);
         }
         setHasMore(data.length === PAGE_SIZE);
-        setOffset(newOffset + data.length);
+        setOffset((prev) => prev + data.length);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "대화 목록을 불러오지 못했습니다.");
       } finally {
         setLoading(false);
       }
@@ -48,6 +53,8 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
 
   async function openConversation(conv: Conversation) {
     setSelected(conv);
+    setMessages([]);
+    setMsgError(null);
     setMsgLoading(true);
     try {
       const data = await apiFetch<Message[]>(
@@ -55,6 +62,8 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
         apiKey
       );
       setMessages(data);
+    } catch (err) {
+      setMsgError(err instanceof Error ? err.message : "메시지를 불러오지 못했습니다.");
     } finally {
       setMsgLoading(false);
     }
@@ -83,6 +92,8 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
         </div>
         {msgLoading ? (
           <p className={styles.empty}>불러오는 중…</p>
+        ) : msgError ? (
+          <p className={styles.empty}>{msgError}</p>
         ) : messages.length === 0 ? (
           <p className={styles.empty}>메시지가 없습니다.</p>
         ) : (
@@ -119,7 +130,8 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
   return (
     <div className={styles.root}>
       <h2 className={styles.heading}>대화 이력</h2>
-      {conversations.length === 0 && !loading ? (
+      {error && <p className={styles.empty}>{error}</p>}
+      {conversations.length === 0 && !loading && !error ? (
         <p className={styles.empty}>대화 기록이 없습니다.</p>
       ) : (
         <table className={styles.table}>
