@@ -47,6 +47,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   const [saved, setSaved] = useState(false);
   const [newDomain, setNewDomain] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
 
   function set(key: keyof typeof form, value: string | boolean) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -83,8 +84,13 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   }
 
   async function addDomain() {
-    const domain = newDomain.trim().toLowerCase();
+    // 스킴(http://, https://)과 포트(:8080) 자동 제거
+    const domain = newDomain.trim().toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "")
+      .replace(/:\d+$/, "");
     if (!domain) return;
+    setDomainError(null);
     setDomainSaving(true);
     try {
       const updated = await adminFetch<Tenant>(`/tenants/${tenant.id}/domains`, {
@@ -93,6 +99,8 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
       });
       onUpdated(updated);
       setNewDomain("");
+    } catch (e) {
+      setDomainError(e instanceof Error ? e.message : "도메인 추가 실패");
     } finally {
       setDomainSaving(false);
     }
@@ -244,7 +252,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
           <input
             className={styles.input}
             value={newDomain}
-            onChange={(e) => setNewDomain(e.target.value)}
+            onChange={(e) => { setNewDomain(e.target.value); setDomainError(null); }}
             placeholder="example.com"
             style={{ flex: 1 }}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }}
@@ -253,6 +261,11 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             추가
           </button>
         </div>
+        {domainError && (
+          <p style={{ fontSize: 12, color: "var(--color-danger, #e53e3e)", marginTop: 6 }}>
+            {domainError}
+          </p>
+        )}
       </fieldset>
 
       <div className={styles.footer}>
