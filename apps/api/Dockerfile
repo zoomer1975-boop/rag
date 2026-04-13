@@ -1,35 +1,19 @@
-FROM python:3.11-slim
+FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
 
 WORKDIR /app
 
-# 시스템 의존성 + Playwright chromium 의존 라이브러리
+# PostgreSQL 연결을 위한 시스템 의존성 설치
 RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
-    curl \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 의존성 설치
+# 패키징 최적화를 위해 의존성 먼저 복사
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwright 브라우저 및 시스템 의존성 설치 (크롤러용)
+# 이미 베이스 이미지에 브라우저가 포함되어 있으나, 버전을 맞추기 위해 실행
 RUN playwright install chromium
-RUN apt-get update && playwright install-deps chromium && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
