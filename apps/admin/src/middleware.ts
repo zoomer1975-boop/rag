@@ -13,8 +13,12 @@ export async function middleware(req: NextRequest) {
   const payload = await verifySessionToken(token);
 
   if (!payload) {
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    // req.nextUrl은 basePath-aware URL 객체이므로 clone() 후 pathname만 바꾸면
+    // Next.js가 자동으로 basePath("/rag/admin")를 포함한 URL을 생성합니다.
+    // new URL("/login", req.url) 은 basePath를 포함하지 않아 nginx 404가 발생합니다.
+    const loginUrl = req.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl, 307);
   }
 
