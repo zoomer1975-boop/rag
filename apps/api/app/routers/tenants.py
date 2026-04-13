@@ -128,6 +128,7 @@ async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db)):
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
     await db.delete(tenant)
+    await db.commit()
 
 
 class DomainAdd(BaseModel):

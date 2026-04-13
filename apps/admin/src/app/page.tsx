@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { adminFetch, type Tenant } from "@/lib/api";
 import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
@@ -28,6 +28,18 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  async function deleteTenant(t: Tenant) {
+    if (!confirm(`테넌트 "${t.name}"을(를) 삭제하시겠습니까?\n\n모든 문서, 청크, 대화 데이터가 함께 삭제됩니다.`)) return;
+    try {
+      await adminFetch<void>(`/tenants/${t.id}`, { method: "DELETE" });
+      setTenants((prev) => prev.filter((x) => x.id !== t.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제 중 오류가 발생했습니다.");
+    }
+  }
+
+  useEffect(() => { loadTenants(); }, []);
 
   function selectTenant(t: Tenant) {
     setTenant(t);
@@ -77,6 +89,9 @@ export default function Home() {
                 <code className={styles.apiKey}>{t.api_key}</code>
                 <button className={styles.btnSecondary} onClick={() => selectTenant(t)}>
                   관리 →
+                </button>
+                <button className={styles.btnDanger} onClick={() => deleteTenant(t)} aria-label="테넌트 삭제">
+                  삭제
                 </button>
               </li>
             ))}
