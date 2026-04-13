@@ -17,7 +17,6 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState("");
-  const [crawlFull, setCrawlFull] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -40,7 +39,7 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
     try {
       const doc = await apiFetch<Document>("/ingest/url", apiKey, {
         method: "POST",
-        body: JSON.stringify({ url: urlInput.trim(), crawl_full_site: crawlFull }),
+        body: JSON.stringify({ url: urlInput.trim() }),
       });
       setDocs((prev) => [doc, ...prev]);
       setUrlInput("");
@@ -90,14 +89,6 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
           />
-          <label className={styles.checkLabel}>
-            <input
-              type="checkbox"
-              checked={crawlFull}
-              onChange={(e) => setCrawlFull(e.target.checked)}
-            />
-            전체 사이트 크롤링
-          </label>
           <button className={styles.btnPrimary} type="submit" disabled={submitting}>
             {submitting ? "처리 중…" : "인제스트"}
           </button>
@@ -108,12 +99,12 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
         <h3 className={styles.subHeading}>파일 업로드</h3>
         <div className={styles.fileRow}>
           <button className={styles.btnSecondary} onClick={() => fileRef.current?.click()} disabled={submitting}>
-            파일 선택 (PDF, DOCX, TXT)
+            파일 선택 (PDF, DOCX, TXT, MD)
           </button>
           <input
             ref={fileRef}
             type="file"
-            accept=".pdf,.docx,.txt"
+            accept=".pdf,.docx,.txt,.md"
             style={{ display: "none" }}
             onChange={ingestFile}
           />
