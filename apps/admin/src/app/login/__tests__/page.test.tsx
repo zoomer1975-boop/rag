@@ -34,7 +34,7 @@ describe("LoginPage – 로그인 후 리다이렉트", () => {
     vi.restoreAllMocks();
   });
 
-  it("로그인 성공 시 /rag/admin 으로 hard navigate 한다 (basePath 포함)", async () => {
+  it("로그인 성공 시 /rag/admin/ 으로 hard navigate 한다 (basePath 포함)", async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), { status: 200 })
     );
@@ -50,7 +50,7 @@ describe("LoginPage – 로그인 후 리다이렉트", () => {
       const href = (window.location as { href: string }).href;
       const assignMock = (window.location.assign as ReturnType<typeof vi.fn>);
       const navigatedTo = assignMock.mock.calls[0]?.[0] ?? href;
-      expect(navigatedTo).toBe("/rag/admin");
+      expect(navigatedTo).toBe("/rag/admin/");
     });
   });
 

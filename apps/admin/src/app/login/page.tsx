@@ -40,7 +40,7 @@ function LoginForm() {
         // browser request so the cookie is sent and the server can validate it.
         // basePath ("/rag/admin") must be prepended manually because
         // window.location is not basePath-aware (unlike next/router).
-        const destination = "/rag/admin" + (safeUrl === "/" ? "" : safeUrl);
+        const destination = "/rag/admin" + safeUrl;
         window.location.assign(destination);
       } else {
         const data = await res.json().catch(() => ({}));
