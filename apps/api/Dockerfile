@@ -19,14 +19,17 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 의존성 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwright 브라우저 설치 (크롤러용) - 폰트 패키지 제외
+# Playwright 브라우저 및 시스템 의존성 설치 (크롤러용)
 RUN playwright install chromium
+RUN playwright install-deps chromium
 
 COPY . .
 

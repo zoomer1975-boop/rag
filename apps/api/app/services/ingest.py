@@ -108,4 +108,4 @@ class IngestService:
             document.chunk_count = chunk_count
         if error:
             document.error_message = error[:1000]
-        await self._db.flush()
+        await self._db.commit()

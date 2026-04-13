@@ -145,9 +145,12 @@ async def _run_url_ingest(
         document = await db.get(Document, doc_id)
         if not document:
             return
-        service = IngestService(db=db, embedding_client=embedding_client)
-        await service.ingest_url(document, crawl_full_site=crawl_full_site)
-        await db.commit()
+        try:
+            service = IngestService(db=db, embedding_client=embedding_client)
+            await service.ingest_url(document, crawl_full_site=crawl_full_site)
+        except Exception:
+            # 에러는 service.ingest_url 내부에서 처리되어 DB에 기록됨
+            pass
 
 
 async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> None:
@@ -157,6 +160,9 @@ async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> No
         document = await db.get(Document, doc_id)
         if not document:
             return
-        service = IngestService(db=db, embedding_client=embedding_client)
-        await service.ingest_file(document)
-        await db.commit()
+        try:
+            service = IngestService(db=db, embedding_client=embedding_client)
+            await service.ingest_file(document)
+        except Exception:
+            # 에러는 service.ingest_file 내부에서 처리되어 DB에 기록됨
+            pass
