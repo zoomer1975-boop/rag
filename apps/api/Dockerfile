@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Playwright 브라우저 및 시스템 의존성 설치 (크롤러용)
 RUN playwright install chromium
-RUN playwright install-deps chromium
+RUN apt-get update && playwright install-deps chromium && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
