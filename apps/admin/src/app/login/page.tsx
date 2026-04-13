@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
@@ -9,7 +9,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   : "";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
 
@@ -35,9 +34,14 @@ function LoginForm() {
           callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
             ? callbackUrl
             : "/";
-        // router.push respects basePath ("/rag/admin") automatically,
-        // so push("/") navigates to "/rag/admin" instead of the site root.
-        router.push(safeUrl);
+        // Hard navigation with explicit basePath prefix.
+        // router.push is a soft navigation and may not re-evaluate middleware
+        // with the new session cookie. window.location.assign forces a full
+        // browser request so the cookie is sent and the server can validate it.
+        // basePath ("/rag/admin") must be prepended manually because
+        // window.location is not basePath-aware (unlike next/router).
+        const destination = "/rag/admin" + (safeUrl === "/" ? "" : safeUrl);
+        window.location.assign(destination);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "로그인에 실패했습니다.");
