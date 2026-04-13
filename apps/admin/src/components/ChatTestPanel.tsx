@@ -4,6 +4,122 @@ import { useEffect, useRef, useState } from "react";
 import { type Tenant } from "@/lib/api";
 import styles from "./ChatTestPanel.module.css";
 
+// ─── 경량 Markdown 렌더러 ────────────────────────────────────────────────────
+// LLM 출력에서 자주 쓰이는 패턴을 React 엘리먼트로 변환.
+// dangerouslySetInnerHTML 미사용 — XSS 안전.
+
+function renderMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // 코드 블록 (```)
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      nodes.push(
+        <pre key={i} className={styles.mdPre}>
+          <code>{codeLines.join("\n")}</code>
+        </pre>
+      );
+      i++;
+      continue;
+    }
+
+    // 헤딩 (# ## ###)
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = inlineSpans(headingMatch[2]);
+      const Tag = (`h${level + 2}`) as "h3" | "h4" | "h5";
+      nodes.push(<Tag key={i} className={styles.mdHeading}>{content}</Tag>);
+      i++;
+      continue;
+    }
+
+    // 순서 없는 리스트 (- * 항목)
+    if (/^[-*]\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^[-*]\s/, ""));
+        i++;
+      }
+      nodes.push(
+        <ul key={i} className={styles.mdList}>
+          {items.map((it, j) => <li key={j}>{inlineSpans(it)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+
+    // 순서 있는 리스트 (1. 2.)
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s/, ""));
+        i++;
+      }
+      nodes.push(
+        <ol key={i} className={styles.mdList}>
+          {items.map((it, j) => <li key={j}>{inlineSpans(it)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+
+    // 구분선
+    if (/^---+$/.test(line.trim())) {
+      nodes.push(<hr key={i} className={styles.mdHr} />);
+      i++;
+      continue;
+    }
+
+    // 빈 줄
+    if (line.trim() === "") {
+      nodes.push(<br key={i} />);
+      i++;
+      continue;
+    }
+
+    // 일반 단락
+    nodes.push(<p key={i} className={styles.mdPara}>{inlineSpans(line)}</p>);
+    i++;
+  }
+
+  return nodes;
+}
+
+// 인라인 요소: **bold**, *italic*, `code`
+function inlineSpans(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  // 패턴: **bold** | *italic* | `code`
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match[0].startsWith("**")) {
+      parts.push(<strong key={match.index}>{match[2]}</strong>);
+    } else if (match[0].startsWith("*")) {
+      parts.push(<em key={match.index}>{match[3]}</em>);
+    } else {
+      parts.push(<code key={match.index} className={styles.mdCode}>{match[4]}</code>);
+    }
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -170,7 +286,9 @@ export default function ChatTestPanel({ tenant }: Props) {
             className={`${styles.bubble} ${msg.role === "user" ? styles.user : styles.assistant}`}
           >
             <div className={styles.bubbleContent}>
-              {msg.content}
+              {msg.role === "assistant"
+                ? renderMarkdown(msg.content)
+                : msg.content}
               {msg.streaming && <span className={styles.cursor} />}
             </div>
             {msg.sources && msg.sources.length > 0 && (
