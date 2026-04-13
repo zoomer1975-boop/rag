@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-raguser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpass}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raguser} -d ${POSTGRES_DB:-ragdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     volumes:
@@ -18,13 +35,13 @@ services:
       dockerfile: Dockerfile
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpass}@host.docker.internal:5432/${POSTGRES_DB:-ragdb}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpass}@postgres:5432/${POSTGRES_DB:-ragdb}
       REDIS_URL: redis://redis:6379
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -49,5 +66,6 @@ services:
 
 
 volumes:
+  postgres_data:
   redis_data:
   uploads_data:
