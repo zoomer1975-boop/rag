@@ -1,5 +1,6 @@
 """FastAPI 애플리케이션 진입점"""
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -29,7 +30,8 @@ def run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    run_migrations()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, run_migrations)
     os.makedirs(settings.upload_dir, exist_ok=True)
     os.makedirs("./static/widget", exist_ok=True)
     yield
