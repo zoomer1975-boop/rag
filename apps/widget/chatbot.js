@@ -253,6 +253,32 @@
       text-align: center;
       padding: 4px 0;
     }
+
+    .quick-replies {
+      padding: 8px 12px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .quick-replies.hidden { display: none; }
+    .qr-chip {
+      font-size: 12px;
+      color: var(--accent, #6366f1);
+      background: transparent;
+      border: 1px solid var(--accent, #6366f1);
+      border-radius: 20px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr-chip:hover { background: var(--accent, #6366f1); color: #fff; }
+    .qr-chip:disabled { opacity: 0.4; cursor: not-allowed; }
   `;
 
   // ─── HTML Structure ───────────────────────────────────────────────────────
@@ -270,6 +296,7 @@
         <button class="close-btn" id="close-btn" aria-label="닫기">×</button>
       </div>
       <div class="messages" id="messages" aria-live="polite"></div>
+      <div class="quick-replies hidden" id="quick-replies"></div>
       <div class="input-area">
         <input type="text" id="msg-input" placeholder="메시지를 입력하세요..." autocomplete="off" />
         <button class="send-btn" id="send-btn" disabled aria-label="전송">
@@ -293,32 +320,60 @@
   const msgInput = shadow.getElementById("msg-input");
   const sendBtn = shadow.getElementById("send-btn");
   const windowTitle = shadow.getElementById("window-title");
+  const quickRepliesEl = shadow.getElementById("quick-replies");
 
   // ─── Widget config applied at runtime ─────────────────────────────────────
 
   function applyConfig(config) {
     if (!config) return;
-    if (config.primaryColor) {
-      container.style.setProperty("--accent", config.primaryColor);
-    }
+    const accent = config.primary_color || config.primaryColor;
+    if (accent) container.style.setProperty("--accent", accent);
     if (config.title) windowTitle.textContent = config.title;
-    if (config.position === "bottom-left") {
+    const pos = config.position;
+    if (pos === "bottom-left") {
       toggleBtn.style.right = "auto";
       toggleBtn.style.left = "24px";
       chatWindow.style.right = "auto";
       chatWindow.style.left = "24px";
       chatWindow.style.transformOrigin = "bottom left";
     }
-    if (config.greeting) {
+    if (config.placeholder) msgInput.placeholder = config.placeholder;
+    if (config.greeting && messages.querySelector(".greeting") === null) {
       const greet = document.createElement("p");
       greet.className = "greeting";
       greet.textContent = config.greeting;
       messages.appendChild(greet);
     }
+    const replies = config.quick_replies;
+    if (Array.isArray(replies) && replies.length > 0) {
+      quickRepliesEl.innerHTML = "";
+      replies.forEach((text) => {
+        const btn = document.createElement("button");
+        btn.className = "qr-chip";
+        btn.textContent = text;
+        btn.type = "button";
+        btn.addEventListener("click", () => {
+          if (isStreaming) return;
+          msgInput.value = text;
+          sendBtn.disabled = false;
+          msgInput.focus();
+        });
+        quickRepliesEl.appendChild(btn);
+      });
+      quickRepliesEl.classList.remove("hidden");
+    }
   }
 
-  // Load config from API after session start — config is embedded in SSE session event
-  // For initial render, use the script config if provided
+  // Fetch widget config from API on init
+  const configUrl = API_URL.replace(/\/chat$/, "/chat/widget-config");
+  fetch(configUrl, {
+    headers: { "X-API-Key": API_KEY },
+  })
+    .then((r) => r.ok ? r.json() : null)
+    .then((data) => applyConfig(data))
+    .catch(() => {});
+
+  // Apply script-level overrides immediately for fast first paint
   if (cfg.primaryColor) container.style.setProperty("--accent", cfg.primaryColor);
   if (cfg.title) windowTitle.textContent = cfg.title;
   if (cfg.position === "bottom-left") {
@@ -409,6 +464,9 @@
     msgInput.disabled = !enabled;
     sendBtn.disabled = !enabled;
     isStreaming = !enabled;
+    quickRepliesEl.querySelectorAll(".qr-chip").forEach((btn) => {
+      btn.disabled = !enabled;
+    });
   }
 
   // ─── Chat ─────────────────────────────────────────────────────────────────

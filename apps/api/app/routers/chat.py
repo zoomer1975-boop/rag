@@ -30,6 +30,21 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
+@router.get("/widget-config")
+async def widget_config(
+    tenant: Tenant = Depends(get_tenant),
+):
+    """위젯 설정 조회 — 위젯 초기화 시 호출"""
+    return {
+        "primary_color": tenant.widget_config.get("primary_color", "#0066ff"),
+        "title": tenant.widget_config.get("title", "챗봇"),
+        "greeting": tenant.widget_config.get("greeting", ""),
+        "placeholder": tenant.widget_config.get("placeholder", "메시지를 입력하세요..."),
+        "position": tenant.widget_config.get("position", "bottom-right"),
+        "quick_replies": tenant.widget_config.get("quick_replies", []),
+    }
+
+
 @router.post("")
 async def chat(
     body: ChatRequest,

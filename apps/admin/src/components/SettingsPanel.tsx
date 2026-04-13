@@ -41,6 +41,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     widget_title: tenant.widget_config.title,
     widget_placeholder: tenant.widget_config.placeholder,
     widget_position: tenant.widget_config.position,
+    quick_replies: (tenant.widget_config.quick_replies ?? []) as string[],
   });
   const [saving, setSaving] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -48,6 +49,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   const [newDomain, setNewDomain] = useState("");
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainError, setDomainError] = useState<string | null>(null);
+  const [newQuickReply, setNewQuickReply] = useState("");
 
   function set(key: keyof typeof form, value: string | boolean) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -72,6 +74,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             title: form.widget_title,
             placeholder: form.widget_placeholder,
             position: form.widget_position,
+            quick_replies: form.quick_replies,
           },
         }),
       });
@@ -266,6 +269,67 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             {domainError}
           </p>
         )}
+      </fieldset>
+
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>즐겨찾기 질문 (Quick Replies)</legend>
+        <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 12 }}>
+          위젯 채팅창 하단에 빠른 질문 버튼으로 표시됩니다. 최대 10개.
+        </p>
+        <div className={styles.domainList}>
+          {form.quick_replies.map((reply, idx) => (
+            <span key={idx} className={styles.domainChip}>
+              {reply}
+              <button
+                type="button"
+                className={styles.domainRemove}
+                onClick={() => setForm((prev) => ({
+                  ...prev,
+                  quick_replies: prev.quick_replies.filter((_, i) => i !== idx),
+                }))}
+                aria-label={`${reply} 삭제`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {form.quick_replies.length === 0 && (
+            <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>등록된 즐겨찾기 없음</span>
+          )}
+        </div>
+        <div className={styles.domainAdd}>
+          <input
+            className={styles.input}
+            value={newQuickReply}
+            onChange={(e) => setNewQuickReply(e.target.value)}
+            placeholder="자주 묻는 질문을 입력하세요"
+            style={{ flex: 1 }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const text = newQuickReply.trim();
+                if (text && form.quick_replies.length < 10) {
+                  setForm((prev) => ({ ...prev, quick_replies: [...prev.quick_replies, text] }));
+                  setNewQuickReply("");
+                }
+              }
+            }}
+          />
+          <button
+            type="button"
+            className={styles.btnPrimary}
+            disabled={!newQuickReply.trim() || form.quick_replies.length >= 10}
+            onClick={() => {
+              const text = newQuickReply.trim();
+              if (text && form.quick_replies.length < 10) {
+                setForm((prev) => ({ ...prev, quick_replies: [...prev.quick_replies, text] }));
+                setNewQuickReply("");
+              }
+            }}
+          >
+            추가
+          </button>
+        </div>
       </fieldset>
 
       <div className={styles.footer}>

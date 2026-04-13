@@ -65,6 +65,7 @@ export interface WidgetConfig {
   position: string;
   title: string;
   placeholder: string;
+  quick_replies?: string[];
 }
 
 export interface Document {
