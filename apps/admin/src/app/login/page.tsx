@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
@@ -9,6 +9,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
   : "";
 
 function LoginForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
 
@@ -34,7 +35,9 @@ function LoginForm() {
           callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
             ? callbackUrl
             : "/";
-        window.location.href = safeUrl;
+        // router.push respects basePath ("/rag/admin") automatically,
+        // so push("/") navigates to "/rag/admin" instead of the site root.
+        router.push(safeUrl);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "로그인에 실패했습니다.");
