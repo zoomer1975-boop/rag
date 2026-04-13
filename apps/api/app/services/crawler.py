@@ -1,9 +1,12 @@
 """웹 크롤러 — Jina Reader API 기반 HTML→Markdown 변환"""
 
+import logging
+
 import httpx
 
 from app.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 JINA_READER_BASE = "https://r.jina.ai/"
@@ -20,9 +23,12 @@ class WebCrawler:
         if settings.jina_api_key:
             headers["Authorization"] = f"Bearer {settings.jina_api_key}"
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        timeout = httpx.Timeout(connect=10.0, read=self.timeout, write=10.0, pool=5.0)
+        logger.info("Jina Reader 요청: %s", jina_url)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(jina_url, headers=headers, follow_redirects=True)
             response.raise_for_status()
+        logger.info("Jina Reader 응답: %d, 길이=%d", response.status_code, len(response.text))
 
         content = response.text.strip()
         title = self._extract_title(content) or url

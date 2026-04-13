@@ -1,13 +1,16 @@
 """문서 인제스트 API"""
 
+import logging
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, HttpUrl
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.db.session import get_db
@@ -136,6 +139,7 @@ async def delete_document(
     if not doc or doc.tenant_id != tenant.id:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     await db.delete(doc)
+    await db.commit()
 
 
 async def _run_url_ingest(
@@ -143,28 +147,52 @@ async def _run_url_ingest(
 ) -> None:
     from app.db.session import AsyncSessionLocal
 
+    logger.info("URL 인제스트 시작: doc_id=%d", doc_id)
     async with AsyncSessionLocal() as db:
         document = await db.get(Document, doc_id)
         if not document:
+            logger.warning("URL 인제스트: doc_id=%d 문서 없음", doc_id)
             return
         try:
             service = IngestService(db=db, embedding_client=embedding_client)
             await service.ingest_url(document, crawl_full_site=crawl_full_site)
-        except Exception:
-            # 에러는 service.ingest_url 내부에서 처리되어 DB에 기록됨
-            pass
+            logger.info("URL 인제스트 완료: doc_id=%d", doc_id)
+        except Exception as exc:
+            logger.exception("URL 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
+            # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(status="failed", error_message=str(exc)[:1000])
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("URL 인제스트 실패 상태 저장 실패: doc_id=%d", doc_id)
 
 
 async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> None:
     from app.db.session import AsyncSessionLocal
 
+    logger.info("파일 인제스트 시작: doc_id=%d", doc_id)
     async with AsyncSessionLocal() as db:
         document = await db.get(Document, doc_id)
         if not document:
+            logger.warning("파일 인제스트: doc_id=%d 문서 없음", doc_id)
             return
         try:
             service = IngestService(db=db, embedding_client=embedding_client)
             await service.ingest_file(document)
-        except Exception:
-            # 에러는 service.ingest_file 내부에서 처리되어 DB에 기록됨
-            pass
+            logger.info("파일 인제스트 완료: doc_id=%d", doc_id)
+        except Exception as exc:
+            logger.exception("파일 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
+            # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(status="failed", error_message=str(exc)[:1000])
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("파일 인제스트 실패 상태 저장 실패: doc_id=%d", doc_id)

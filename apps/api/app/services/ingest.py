@@ -1,10 +1,13 @@
 """문서 인제스트 파이프라인 — 파싱 → 청킹 → 임베딩 → 저장"""
 
+import logging
 import os
 from pathlib import Path
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.config import get_settings
 from app.models.chunk import Chunk
@@ -54,6 +57,7 @@ class IngestService:
 
             await self._set_status(document, "completed", chunk_count=total_chunks)
         except Exception as exc:
+            logger.exception("URL 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
             await self._set_status(document, "failed", error=str(exc))
             raise
 
@@ -70,6 +74,7 @@ class IngestService:
             await self._save_chunks(document, chunks_data)
             await self._set_status(document, "completed", chunk_count=len(chunks_data))
         except Exception as exc:
+            logger.exception("파일 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
             await self._set_status(document, "failed", error=str(exc))
             raise
 
