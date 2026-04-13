@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -11,9 +11,6 @@ RUN apt-get update && apt-get install -y \
 # 패키징 최적화를 위해 의존성 먼저 복사
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# 이미 베이스 이미지에 브라우저가 포함되어 있으나, 버전을 맞추기 위해 실행
-RUN playwright install chromium
 
 COPY . .
 

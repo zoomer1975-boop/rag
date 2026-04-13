@@ -20,7 +20,7 @@ from app.services.ingest import IngestService
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 
 class URLIngestRequest(BaseModel):
@@ -60,6 +60,7 @@ async def ingest_url(
     db.add(document)
     await db.flush()
     await db.refresh(document)
+    await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
 
     background_tasks.add_task(
         _run_url_ingest, document.id, body.crawl_full_site, embedding_client
@@ -106,6 +107,7 @@ async def ingest_file(
     db.add(document)
     await db.flush()
     await db.refresh(document)
+    await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
 
     background_tasks.add_task(_run_file_ingest, document.id, embedding_client)
     return document

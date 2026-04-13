@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     max_upload_size_mb: int = 50
 
+    # Jina Reader (URL 인제스트)
+    jina_api_key: str = ""
+
     @property
     def supported_language_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",")]

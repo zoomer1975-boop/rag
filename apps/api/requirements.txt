@@ -25,10 +25,7 @@ pypdf==4.3.1
 python-docx==1.1.2
 python-multipart==0.0.12
 
-# Web crawling
-playwright==1.47.0
-beautifulsoup4==4.12.3
-
+# Web crawling (Jina Reader via httpx)
 # Text processing
 tiktoken==0.7.0
 

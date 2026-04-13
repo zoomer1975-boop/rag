@@ -1,4 +1,4 @@
-"""문서 파서 — PDF, DOCX, TXT 지원"""
+"""문서 파서 — PDF, DOCX, TXT, MD 지원"""
 
 import io
 from pathlib import Path
@@ -18,7 +18,7 @@ class DocumentParser:
             return self._parse_pdf(path)
         if source_type == "docx":
             return self._parse_docx(path)
-        if source_type == "txt":
+        if source_type in ("txt", "md"):
             return path.read_text(encoding="utf-8", errors="ignore")
 
         raise ValueError(f"지원하지 않는 파일 형식: {source_type}")
@@ -35,7 +35,7 @@ class DocumentParser:
             doc = DocxDocument(io.BytesIO(content))
             return "\n\n".join(para.text for para in doc.paragraphs if para.text.strip())
 
-        if source_type == "txt":
+        if source_type in ("txt", "md"):
             return content.decode("utf-8", errors="ignore").strip()
 
         raise ValueError(f"지원하지 않는 파일 형식: {source_type}")
