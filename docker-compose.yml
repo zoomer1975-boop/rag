@@ -40,7 +40,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: /rag/api/v1
     ports:
-      - "3001:3000"
+      - "3002:3000"
     depends_on:
       - api
     restart: unless-stopped
