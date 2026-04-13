@@ -7,6 +7,7 @@ import DocumentsPanel from "./DocumentsPanel";
 import SettingsPanel from "./SettingsPanel";
 import WidgetPanel from "./WidgetPanel";
 import ConversationHistoryPanel from "./ConversationHistoryPanel";
+import LogoutButton from "./LogoutButton";
 import styles from "./Dashboard.module.css";
 
 type Tab = "stats" | "documents" | "settings" | "widget" | "history";
@@ -39,6 +40,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Pr
           <span className={styles.tenantName}>{tenant.name}</span>
           <code className={styles.apiKey}>{apiKey}</code>
         </div>
+        <LogoutButton className={styles.logout} />
       </header>
       <nav className={styles.tabs}>
         {TABS.map((tab) => (

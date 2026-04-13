@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { adminFetch, type Tenant } from "@/lib/api";
 import Dashboard from "@/components/Dashboard";
+import LogoutButton from "@/components/LogoutButton";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -48,6 +49,7 @@ export default function Home() {
     <div className={styles.root}>
       <header className={styles.header}>
         <span className={styles.logo}>RAG Admin</span>
+        <LogoutButton className={styles.btnGhost} />
       </header>
       <main className={styles.main}>
         <div className={styles.panel}>
