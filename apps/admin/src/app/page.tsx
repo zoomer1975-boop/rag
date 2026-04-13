@@ -4,6 +4,7 @@ import { useState } from "react";
 import { adminFetch, type Tenant } from "@/lib/api";
 import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
+import CreateTenantForm from "@/components/CreateTenantForm";
 import styles from "./page.module.css";
 
 export default function Home() {
@@ -58,7 +59,7 @@ export default function Home() {
             <button className={styles.btnPrimary} onClick={loadTenants} disabled={loading}>
               {loading ? "불러오는 중…" : "새로고침"}
             </button>
-            <CreateTenantInline onCreated={(t) => { setTenants((prev) => [t, ...prev]); }} />
+            <CreateTenantForm onCreated={(t) => { setTenants((prev) => [t, ...prev]); }} />
           </div>
           {error && <p className={styles.error}>{error}</p>}
           {tenants.length === 0 && !loading && (
@@ -83,54 +84,5 @@ export default function Home() {
         </div>
       </main>
     </div>
-  );
-}
-
-function CreateTenantInline({ onCreated }: { onCreated: (t: Tenant) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-    setLoading(true);
-    try {
-      const tenant = await adminFetch<Tenant>("/tenants/", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      onCreated(tenant);
-      setName("");
-      setOpen(false);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!open) {
-    return (
-      <button className={styles.btnSecondary} onClick={() => setOpen(true)}>
-        + 테넌트 추가
-      </button>
-    );
-  }
-
-  return (
-    <form className={styles.inlineForm} onSubmit={submit}>
-      <input
-        className={styles.input}
-        placeholder="테넌트 이름"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        autoFocus
-      />
-      <button className={styles.btnPrimary} type="submit" disabled={loading}>
-        {loading ? "생성 중…" : "생성"}
-      </button>
-      <button className={styles.btnGhost} type="button" onClick={() => setOpen(false)}>
-        취소
-      </button>
-    </form>
   );
 }
