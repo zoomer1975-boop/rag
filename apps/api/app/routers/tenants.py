@@ -1,8 +1,12 @@
 """테넌트 관리 API"""
 
+import json
 import re
+import uuid
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 _DOMAIN_RE = re.compile(
@@ -12,8 +16,14 @@ _DOMAIN_RE = re.compile(
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.session import get_db
+from app.models.conversation import Conversation, Message
 from app.models.tenant import Tenant
+from app.services.embeddings import get_embedding_client
+from app.services.language import LanguageService
+from app.services.llm import get_llm_client
+from app.services.rag import RAGService
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
 
@@ -178,3 +188,140 @@ async def remove_domain(
     await db.refresh(tenant)
     await db.commit()
     return tenant
+
+
+# ─── 어드민 채팅 테스트 ───────────────────────────────────────────────────────
+
+
+class AdminChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+
+
+@router.post("/{tenant_id}/chat-test")
+async def admin_chat_test(
+    tenant_id: int,
+    body: AdminChatRequest,
+    db: AsyncSession = Depends(get_db),
+    llm_client=Depends(get_llm_client),
+    embedding_client=Depends(get_embedding_client),
+):
+    """어드민 전용 채팅 테스트 — 도메인 검증 없이 RAG 채팅을 직접 실행."""
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
+
+    settings = get_settings()
+    lang_service = LanguageService(default_language=settings.default_language)
+    resolved_lang = lang_service.resolve_lang(
+        detected=settings.default_language,
+        policy=tenant.lang_policy,
+        default_lang=tenant.default_lang,
+        allowed_langs=tenant.allowed_lang_list,
+    )
+
+    session_id = body.session_id or str(uuid.uuid4())
+
+    conv_result = await db.execute(
+        select(Conversation).where(
+            Conversation.tenant_id == tenant.id,
+            Conversation.session_id == session_id,
+        )
+    )
+    conversation = conv_result.scalar_one_or_none()
+    if not conversation:
+        conversation = Conversation(
+            tenant_id=tenant.id,
+            session_id=session_id,
+            lang_code=resolved_lang,
+        )
+        db.add(conversation)
+        await db.flush()
+        await db.refresh(conversation)
+
+    history_result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.desc())
+        .limit(20)
+    )
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in reversed(history_result.scalars().all())
+    ]
+
+    rag_service = RAGService(
+        db=db,
+        embedding_client=embedding_client,
+        language_service=lang_service,
+    )
+    retrieved_chunks = await rag_service.retrieve(
+        query=body.message,
+        tenant_id=tenant.id,
+        top_k=5,
+    )
+    messages = rag_service.build_messages(
+        query=body.message,
+        retrieved_chunks=retrieved_chunks,
+        conversation_history=history,
+        tenant=tenant,
+        lang_code=resolved_lang,
+    )
+    sources = rag_service.build_sources(retrieved_chunks)
+
+    user_msg = Message(
+        conversation_id=conversation.id,
+        role="user",
+        content=body.message,
+    )
+    db.add(user_msg)
+    await db.commit()
+
+    return StreamingResponse(
+        _admin_chat_stream(
+            llm_client=llm_client,
+            messages=messages,
+            sources=sources,
+            conversation_id=conversation.id,
+            session_id=session_id,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "X-Session-Id": session_id,
+        },
+    )
+
+
+async def _admin_chat_stream(
+    llm_client,
+    messages: list[dict],
+    sources: list[dict],
+    conversation_id: int,
+    session_id: str,
+) -> AsyncGenerator[str, None]:
+    full_response = ""
+
+    yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+
+    if sources:
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+
+    async for token in llm_client.chat_stream(messages):
+        full_response += token
+        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+    yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
+
+    from app.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as save_db:
+        msg = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=full_response,
+            sources=sources,
+        )
+        save_db.add(msg)
+        await save_db.commit()

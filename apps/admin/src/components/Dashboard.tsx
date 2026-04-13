@@ -7,10 +7,11 @@ import DocumentsPanel from "./DocumentsPanel";
 import SettingsPanel from "./SettingsPanel";
 import WidgetPanel from "./WidgetPanel";
 import ConversationHistoryPanel from "./ConversationHistoryPanel";
+import ChatTestPanel from "./ChatTestPanel";
 import LogoutButton from "./LogoutButton";
 import styles from "./Dashboard.module.css";
 
-type Tab = "stats" | "documents" | "settings" | "widget" | "history";
+type Tab = "stats" | "documents" | "settings" | "widget" | "history" | "chat";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "stats", label: "통계" },
@@ -18,6 +19,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "설정" },
   { id: "widget", label: "위젯 코드" },
   { id: "history", label: "대화이력" },
+  { id: "chat", label: "채팅 테스트" },
 ];
 
 interface Props {
@@ -61,6 +63,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Pr
         )}
         {activeTab === "widget" && <WidgetPanel tenant={tenant} />}
         {activeTab === "history" && <ConversationHistoryPanel apiKey={apiKey} />}
+        {activeTab === "chat" && <ChatTestPanel tenant={tenant} />}
       </main>
     </div>
   );
