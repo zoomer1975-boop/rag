@@ -160,6 +160,17 @@
   margin: 10px 0;
 }
 
+.mdLink {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.mdLink:hover {
+  opacity: 0.8;
+}
+
 /* assistant 버블 안에서는 배경 조정 */
 .assistant .mdCode {
   background: var(--color-surface-2);

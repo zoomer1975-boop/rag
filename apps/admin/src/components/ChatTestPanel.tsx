@@ -97,22 +97,28 @@ function renderMarkdown(text: string): React.ReactNode[] {
   return nodes;
 }
 
-// 인라인 요소: **bold**, *italic*, `code`
+// 인라인 요소: [link](url), **bold**, *italic*, `code`
 function inlineSpans(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  // 패턴: **bold** | *italic* | `code`
-  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
+  // 패턴: [text](url) | **bold** | *italic* | `code`
+  const re = /(\[(.+?)\]\(([^)]+)\)|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
   let last = 0;
   let match: RegExpExecArray | null;
 
   while ((match = re.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
-    if (match[0].startsWith("**")) {
-      parts.push(<strong key={match.index}>{match[2]}</strong>);
+    if (match[0].startsWith("[")) {
+      parts.push(
+        <a key={match.index} href={match[3]} target="_blank" rel="noopener noreferrer" className={styles.mdLink}>
+          {match[2]}
+        </a>
+      );
+    } else if (match[0].startsWith("**")) {
+      parts.push(<strong key={match.index}>{match[4]}</strong>);
     } else if (match[0].startsWith("*")) {
-      parts.push(<em key={match.index}>{match[3]}</em>);
+      parts.push(<em key={match.index}>{match[5]}</em>);
     } else {
-      parts.push(<code key={match.index} className={styles.mdCode}>{match[4]}</code>);
+      parts.push(<code key={match.index} className={styles.mdCode}>{match[6]}</code>);
     }
     last = match.index + match[0].length;
   }
