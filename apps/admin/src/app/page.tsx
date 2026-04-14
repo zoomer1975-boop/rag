@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { adminFetch, type Tenant, type SubAdmin } from "@/lib/api";
+import { adminFetch, type Tenant } from "@/lib/api";
 import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
 import CreateTenantForm from "@/components/CreateTenantForm";
@@ -21,7 +21,8 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [view, setView] = useState<"login" | "tenants" | "dashboard" | "sub-admins">("tenants");
+  const [view, setView] = useState<"login" | "tenants" | "dashboard">("tenants");
+  const [showSubAdminModal, setShowSubAdminModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -93,20 +94,19 @@ export default function Home() {
     );
   }
 
-  if (view === "sub-admins" && session?.is_superadmin) {
-    return (
-      <SubAdminManager
-        onBack={() => setView("tenants")}
-        onSubAdminsUpdated={() => {}}
-      />
-    );
-  }
-
   return (
+    <>
     <div className={styles.root}>
       <header className={styles.header}>
         <span className={styles.logo}>RAG Admin</span>
-        <LogoutButton className={styles.btnGhost} />
+        <div className={styles.headerRight}>
+          {session?.is_superadmin && (
+            <button className={styles.btnSecondary} onClick={() => setShowSubAdminModal(true)}>
+              부관리자 관리
+            </button>
+          )}
+          <LogoutButton className={styles.btnGhost} />
+        </div>
       </header>
       <main className={styles.main}>
         <div className={styles.panel}>
@@ -118,12 +118,6 @@ export default function Home() {
             {/* 최고관리자만 테넌트 생성 가능 */}
             {session?.is_superadmin && (
               <CreateTenantForm onCreated={(t) => { setTenants((prev) => [t, ...prev]); }} />
-            )}
-            {/* 최고관리자만 부관리자 관리 버튼 표시 */}
-            {session?.is_superadmin && (
-              <button className={styles.btnSecondary} onClick={() => setView("sub-admins")}>
-                부관리자 관리
-              </button>
             )}
           </div>
           {error && <p className={styles.error}>{error}</p>}
@@ -159,5 +153,12 @@ export default function Home() {
         </div>
       </main>
     </div>
+    {showSubAdminModal && (
+      <SubAdminManager
+        onClose={() => setShowSubAdminModal(false)}
+        onSubAdminsUpdated={() => {}}
+      />
+    )}
+    </>
   );
 }

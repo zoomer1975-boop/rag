@@ -5,12 +5,12 @@ import { adminFetch, type SubAdmin, type Tenant } from "@/lib/api";
 import styles from "./SubAdminManager.module.css";
 
 interface SubAdminManagerProps {
-  onBack: () => void;
+  onClose: () => void;
   onSubAdminsUpdated: () => void;
 }
 
 export default function SubAdminManager({
-  onBack,
+  onClose,
   onSubAdminsUpdated,
 }: SubAdminManagerProps) {
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
@@ -140,15 +140,14 @@ export default function SubAdminManager({
   };
 
   return (
-    <div className={styles.root}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>부관리자 관리</h1>
-        <button className={styles.btnBack} onClick={onBack}>
-          ← 돌아가기
-        </button>
-      </div>
+    <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={styles.dialog}>
+        <div className={styles.header}>
+          <span className={styles.title}>부관리자 관리</span>
+          <button className={styles.btnClose} onClick={onClose} aria-label="닫기">✕</button>
+        </div>
 
-      <div className={styles.panel}>
+        <div className={styles.body}>
         <div className={styles.actions}>
           <button
             className={styles.btnPrimary}
@@ -333,6 +332,7 @@ export default function SubAdminManager({
               </div>
             </div>
           ))}
+        </div>
         </div>
       </div>
     </div>
