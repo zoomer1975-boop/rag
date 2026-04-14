@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 
@@ -11,6 +11,24 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL
 function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+
+  // 이미 로그인된 상태면 관리자 메인으로 리다이렉트
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch("/rag/admin/api/auth/me");
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload) {
+            window.location.assign("/rag/admin/");
+          }
+        }
+      } catch {
+        // 세션 확인 실패 시 로그인 폼 그대로 유지
+      }
+    };
+    checkSession();
+  }, []);
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

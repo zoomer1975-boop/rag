@@ -26,15 +26,30 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
 
   // 세션 로드
   useEffect(() => {
     const loadSession = async () => {
-      const res = await fetch("/rag/admin/api/auth/me");
-      if (res.ok) {
-        const payload = await res.json();
-        setSession(payload);
+      try {
+        const res = await fetch("/rag/admin/api/auth/me");
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload) {
+            setSession(payload);
+          } else {
+            window.location.assign("/rag/admin/login");
+            return;
+          }
+        } else {
+          window.location.assign("/rag/admin/login");
+          return;
+        }
+      } catch {
+        window.location.assign("/rag/admin/login");
+        return;
       }
+      setSessionLoading(false);
     };
 
     loadSession();
@@ -75,12 +90,23 @@ export default function Home() {
     }
   }
 
-  useEffect(() => { loadTenants(); }, []);
+  useEffect(() => {
+    if (!sessionLoading && session) loadTenants();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionLoading]);
 
   function selectTenant(t: Tenant) {
     setTenant(t);
     setApiKey(t.api_key);
     setView("dashboard");
+  }
+
+  if (sessionLoading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", color: "#666" }}>
+        로딩 중…
+      </div>
+    );
   }
 
   if (view === "dashboard" && tenant) {
@@ -134,6 +160,9 @@ export default function Home() {
                   </span>
                 </div>
                 <code className={styles.apiKey}>{t.api_key}</code>
+                <button className={styles.btnSecondary} onClick={() => selectTenant(t)}>
+                  관리 →
+                </button>
                 {/* 최고관리자만 테넌트 삭제 가능 */}
                 {session?.is_superadmin && (
                   <button
@@ -144,9 +173,6 @@ export default function Home() {
                     {deletingId === t.id ? "삭제 중…" : "삭제"}
                   </button>
                 )}
-                <button className={styles.btnSecondary} onClick={() => selectTenant(t)}>
-                  관리 →
-                </button>
               </li>
             ))}
           </ul>
