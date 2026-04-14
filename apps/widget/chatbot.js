@@ -155,28 +155,6 @@
       border-radius: 16px 16px 16px 4px;
     }
 
-    .sources {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 4px;
-    }
-    .source-chip {
-      font-size: 11px;
-      color: #7c8099;
-      background: #1a1d27;
-      border: 1px solid #2e3147;
-      border-radius: 20px;
-      padding: 3px 10px;
-      text-decoration: none;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      max-width: 200px;
-      cursor: pointer;
-      transition: border-color 0.15s;
-    }
-    .source-chip:hover { border-color: var(--accent, #6366f1); color: #e8eaf0; }
 
     .typing {
       display: flex;
@@ -428,23 +406,7 @@
   }
 
   function appendSources(sourcesData) {
-    if (!sourcesData || sourcesData.length === 0) return;
-    const lastMsg = messages.querySelector(".msg.assistant:last-child");
-    if (!lastMsg) return;
-    const sourcesEl = document.createElement("div");
-    sourcesEl.className = "sources";
-    sourcesData.slice(0, 5).forEach((src) => {
-      const chip = document.createElement("a");
-      chip.className = "source-chip";
-      chip.textContent = src.title || src.source_url || "출처";
-      if (src.source_url) {
-        chip.href = src.source_url;
-        chip.target = "_blank";
-        chip.rel = "noopener noreferrer";
-      }
-      sourcesEl.appendChild(chip);
-    });
-    lastMsg.appendChild(sourcesEl);
+    // sources display disabled
   }
 
   function scrollToBottom() {
