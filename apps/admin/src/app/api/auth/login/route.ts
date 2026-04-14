@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       const cookieValue = [
         `${SESSION_COOKIE_NAME}=${token}`,
         `Max-Age=${SESSION_MAX_AGE}`,
-        "Path=/rag/admin",
+        "Path=/",
         "HttpOnly",
         "Secure",
         "SameSite=Lax",
@@ -106,7 +106,7 @@ export async function POST(req: Request) {
     const cookieValue = [
       `${SESSION_COOKIE_NAME}=${token}`,
       `Max-Age=${SESSION_MAX_AGE}`,
-      "Path=/rag/admin",
+      "Path=/",
       "HttpOnly",
       "Secure",
       "SameSite=Lax",
