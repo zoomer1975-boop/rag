@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.routers import analytics, chat, ingest, tenants
+from app.routers import admin, analytics, auth, chat, ingest, tenants
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -40,6 +40,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(tenants.router)
 app.include_router(ingest.router)
 app.include_router(chat.router)

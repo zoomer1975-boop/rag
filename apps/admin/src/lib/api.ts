@@ -99,3 +99,13 @@ export interface Message {
   sources: Array<{ title: string; url: string }> | null;
   created_at: string;
 }
+
+export interface SubAdmin {
+  id: number;
+  name: string;
+  username: string;
+  is_active: boolean;
+  allowed_ips: string;
+  created_at: string;
+  tenant_ids: number[];
+}

@@ -1,27 +1,63 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { adminFetch, type Tenant } from "@/lib/api";
+import { adminFetch, type Tenant, type SubAdmin } from "@/lib/api";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
 import CreateTenantForm from "@/components/CreateTenantForm";
+import SubAdminManager from "@/components/SubAdminManager";
 import styles from "./page.module.css";
 
+interface SessionPayload {
+  username: string;
+  is_superadmin?: boolean;
+  sub_admin_id?: number;
+  tenant_ids?: number[];
+  exp: number;
+}
+
 export default function Home() {
+  const [session, setSession] = useState<SessionPayload | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [view, setView] = useState<"login" | "tenants" | "dashboard">("tenants");
+  const [view, setView] = useState<"login" | "tenants" | "dashboard" | "sub-admins">("tenants");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // 세션 로드
+  useEffect(() => {
+    const loadSession = async () => {
+      const token = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith(`${SESSION_COOKIE_NAME}=`))
+        ?.split("=")[1];
+
+      if (token) {
+        const payload = await verifySessionToken(token);
+        setSession(payload);
+      }
+    };
+
+    loadSession();
+  }, []);
 
   async function loadTenants() {
     setLoading(true);
     setError("");
     try {
       const data = await adminFetch<Tenant[]>("/tenants/");
-      setTenants(data);
+
+      // 부관리자면 할당된 테넌트만 필터링
+      if (session && !session.is_superadmin && session.tenant_ids) {
+        const filtered = data.filter((t) => session.tenant_ids?.includes(t.id));
+        setTenants(filtered);
+      } else {
+        setTenants(data);
+      }
+
       setView("tenants");
     } catch (e) {
       setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
@@ -62,6 +98,15 @@ export default function Home() {
     );
   }
 
+  if (view === "sub-admins" && session?.is_superadmin) {
+    return (
+      <SubAdminManager
+        onBack={() => setView("tenants")}
+        onSubAdminsUpdated={() => {}}
+      />
+    );
+  }
+
   return (
     <div className={styles.root}>
       <header className={styles.header}>
@@ -75,7 +120,16 @@ export default function Home() {
             <button className={styles.btnPrimary} onClick={loadTenants} disabled={loading}>
               {loading ? "불러오는 중…" : "새로고침"}
             </button>
-            <CreateTenantForm onCreated={(t) => { setTenants((prev) => [t, ...prev]); }} />
+            {/* 최고관리자만 테넌트 생성 가능 */}
+            {session?.is_superadmin && (
+              <CreateTenantForm onCreated={(t) => { setTenants((prev) => [t, ...prev]); }} />
+            )}
+            {/* 최고관리자만 부관리자 관리 버튼 표시 */}
+            {session?.is_superadmin && (
+              <button className={styles.btnSecondary} onClick={() => setView("sub-admins")}>
+                부관리자 관리
+              </button>
+            )}
           </div>
           {error && <p className={styles.error}>{error}</p>}
           {tenants.length === 0 && !loading && (
@@ -91,13 +145,16 @@ export default function Home() {
                   </span>
                 </div>
                 <code className={styles.apiKey}>{t.api_key}</code>
-                <button
-                  className={styles.btnDanger}
-                  onClick={() => deleteTenant(t)}
-                  disabled={deletingId === t.id}
-                >
-                  {deletingId === t.id ? "삭제 중…" : "삭제"}
-                </button>
+                {/* 최고관리자만 테넌트 삭제 가능 */}
+                {session?.is_superadmin && (
+                  <button
+                    className={styles.btnDanger}
+                    onClick={() => deleteTenant(t)}
+                    disabled={deletingId === t.id}
+                  >
+                    {deletingId === t.id ? "삭제 중…" : "삭제"}
+                  </button>
+                )}
                 <button className={styles.btnSecondary} onClick={() => selectTenant(t)}>
                   관리 →
                 </button>

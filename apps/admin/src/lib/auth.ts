@@ -3,6 +3,9 @@ export const SESSION_MAX_AGE = 60 * 60 * 24; // 24 hours
 
 interface SessionPayload {
   username: string;
+  is_superadmin?: boolean;
+  sub_admin_id?: number;
+  tenant_ids?: number[];
   exp: number;
 }
 
@@ -25,9 +28,17 @@ async function getHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-export async function createSessionToken(username: string): Promise<string> {
+export async function createSessionToken(
+  username: string,
+  is_superadmin: boolean = true,
+  sub_admin_id?: number,
+  tenant_ids?: number[]
+): Promise<string> {
   const payload: SessionPayload = {
     username,
+    is_superadmin,
+    sub_admin_id,
+    tenant_ids,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE,
   };
   const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
