@@ -13,6 +13,8 @@ function LoginForm() {
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
 
   // 이미 로그인된 상태면 관리자 메인으로 리다이렉트
+  // replace()를 사용해 로그인 페이지를 히스토리에서 제거함으로써
+  // 뒤로 가기 버튼으로 로그인 페이지로 돌아오는 것을 방지한다.
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -20,14 +22,26 @@ function LoginForm() {
         if (res.ok) {
           const payload = await res.json();
           if (payload) {
-            window.location.assign("/rag/admin/");
+            window.location.replace("/rag/admin/");
           }
         }
       } catch {
         // 세션 확인 실패 시 로그인 폼 그대로 유지
       }
     };
+
     checkSession();
+
+    // BFCache(뒤로/앞으로 캐시)에서 페이지가 복원될 때 React 효과는 재실행되지 않으므로
+    // pageshow 이벤트로 세션을 재확인한다.
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        checkSession();
+      }
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
   }, []);
 
   const [username, setUsername] = useState("");
@@ -59,7 +73,8 @@ function LoginForm() {
         // basePath ("/rag/admin") must be prepended manually because
         // window.location is not basePath-aware (unlike next/router).
         const destination = "/rag/admin" + safeUrl;
-        window.location.assign(destination);
+        // replace()로 로그인 페이지를 히스토리에서 제거해 뒤로 가기로 돌아오지 못하게 한다.
+        window.location.replace(destination);
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? "로그인에 실패했습니다.");

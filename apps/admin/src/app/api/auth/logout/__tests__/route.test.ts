@@ -10,7 +10,7 @@ describe("POST /api/auth/logout", () => {
     expect(res.status).toBe(200);
   });
 
-  it("clears the admin_session cookie by setting maxAge=0", async () => {
+  it("clears the admin_session cookie with Path=/ to match how it was set on login", async () => {
     const req = new Request("http://localhost/rag/admin/api/auth/logout", {
       method: "POST",
     });
@@ -18,6 +18,10 @@ describe("POST /api/auth/logout", () => {
     const cookie = res.headers.get("set-cookie");
     expect(cookie).toContain("admin_session=");
     expect(cookie).toMatch(/Max-Age=0/i);
-    expect(cookie).toContain("Path=/rag/admin");
+    // Path must match the login route's Path=/ so the cookie is actually cleared.
+    // Using Path=/rag/admin would only clear a cookie scoped to that path,
+    // leaving the Path=/ cookie intact and causing auto-login after logout.
+    expect(cookie).toContain("Path=/;");
+    expect(cookie).not.toContain("Path=/rag/admin");
   });
 });

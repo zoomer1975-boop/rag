@@ -4,7 +4,7 @@ export async function POST() {
   const cookieValue = [
     `${SESSION_COOKIE_NAME}=`,
     "Max-Age=0",
-    "Path=/rag/admin",
+    "Path=/",
     "HttpOnly",
     "Secure",
     "SameSite=Lax",

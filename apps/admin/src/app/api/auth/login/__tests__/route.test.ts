@@ -29,7 +29,7 @@ describe("POST /api/auth/login", () => {
     const cookie = res.headers.get("set-cookie");
     expect(cookie).toContain("admin_session=");
     expect(cookie).toContain("HttpOnly");
-    expect(cookie).toContain("Path=/rag/admin");
+    expect(cookie).toContain("Path=/;");
   });
 
   it("returns 401 for wrong password", async () => {
