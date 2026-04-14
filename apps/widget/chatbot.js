@@ -157,9 +157,9 @@
     .bubble {
       padding: 12px 18px;
       font-size: 15px;
-      line-height: 1.5;
-      word-break: break-all;
-      white-space: pre-wrap;
+      line-height: 1.6;
+      word-break: break-word;
+      overflow-wrap: break-word;
       position: relative;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
@@ -167,6 +167,7 @@
       background: linear-gradient(135deg, var(--accent, #6366f1) 0%, #8b5cf6 100%);
       color: #fff;
       border-radius: 22px 22px 4px 22px;
+      white-space: pre-wrap;
     }
     .msg.assistant .bubble {
       background: rgba(255, 255, 255, 0.08);
@@ -174,6 +175,17 @@
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 22px 22px 22px 4px;
     }
+    .msg.assistant .bubble strong { color: #fff; font-weight: 700; }
+    .msg.assistant .bubble em { font-style: italic; opacity: 0.9; }
+    .msg.assistant .bubble code {
+      font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .msg.assistant .bubble br { display: block; content: ""; margin-top: 4px; }
 
     .typing {
       display: flex;
@@ -411,6 +423,31 @@
     messages.appendChild(greet);
   }
 
+  // ─── Markdown renderer ────────────────────────────────────────────────────
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function parseMarkdown(text) {
+    let out = escapeHtml(text);
+    // Bold: **text** or __text__
+    out = out.replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>");
+    out = out.replace(/__(.+?)__/gs, "<strong>$1</strong>");
+    // Italic: *text* or _text_ (not touching bold markers)
+    out = out.replace(/\*([^*\n]+?)\*/g, "<em>$1</em>");
+    out = out.replace(/_([^_\n]+?)_/g, "<em>$1</em>");
+    // Inline code: `code`
+    out = out.replace(/`([^`]+?)`/g, "<code>$1</code>");
+    // Line breaks
+    out = out.replace(/\n/g, "<br>");
+    return out;
+  }
+
   // ─── UI helpers ───────────────────────────────────────────────────────────
 
   function openWidget() {
@@ -488,6 +525,7 @@
     let assistantBubble = null;
 
     abortController = new AbortController();
+    let assistantText = "";
 
     try {
       const body = JSON.stringify({ message: text, session_id: sessionId });
@@ -547,7 +585,8 @@
               msgEl.appendChild(assistantBubble);
               messages.appendChild(msgEl);
             }
-            assistantBubble.textContent += event.content;
+            assistantText += event.content;
+            assistantBubble.innerHTML = parseMarkdown(assistantText);
             scrollToBottom();
           } else if (event.type === "done") {
             // Stream complete
