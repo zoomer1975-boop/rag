@@ -13,11 +13,42 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   failed: { label: "실패", color: "#ef4444" },
 };
 
+const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  url: { label: "URL", color: "#6366f1" },
+  pdf: { label: "PDF", color: "#ef4444" },
+  docx: { label: "DOCX", color: "#3b82f6" },
+  txt: { label: "TXT", color: "#6b7280" },
+  md: { label: "MD", color: "#6b7280" },
+};
+
+const REFRESH_INTERVAL_OPTIONS = [
+  { value: 0, label: "자동 갱신 안 함" },
+  { value: 1, label: "1시간마다" },
+  { value: 6, label: "6시간마다" },
+  { value: 12, label: "12시간마다" },
+  { value: 24, label: "24시간마다 (1일)" },
+  { value: 48, label: "48시간마다 (2일)" },
+  { value: 72, label: "72시간마다 (3일)" },
+  { value: 168, label: "168시간마다 (1주)" },
+];
+
+function formatDatetime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -75,6 +106,26 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
     setDocs((prev) => prev.filter((d) => d.id !== id));
   }
 
+  async function refreshDoc(id: number) {
+    setRefreshingId(id);
+    try {
+      const updated = await apiFetch<Document>(`/ingest/documents/${id}/refresh`, apiKey, {
+        method: "POST",
+      });
+      setDocs((prev) => prev.map((d) => (d.id === id ? updated : d)));
+    } finally {
+      setRefreshingId(null);
+    }
+  }
+
+  async function updateRefreshInterval(id: number, hours: number) {
+    const updated = await apiFetch<Document>(`/ingest/documents/${id}/refresh-interval`, apiKey, {
+      method: "PATCH",
+      body: JSON.stringify({ refresh_interval_hours: hours }),
+    });
+    setDocs((prev) => prev.map((d) => (d.id === id ? updated : d)));
+  }
+
   return (
     <div>
       <h2 className={styles.heading}>문서 관리</h2>
@@ -125,23 +176,63 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
           <ul className={styles.docList}>
             {docs.map((doc) => {
               const st = STATUS_LABELS[doc.status] ?? { label: doc.status, color: "#ccc" };
+              const typeBadge = SOURCE_TYPE_LABELS[doc.source_type] ?? { label: doc.source_type.toUpperCase(), color: "#6b7280" };
+              const isUrl = doc.source_type === "url";
+              const isRefreshing = refreshingId === doc.id;
               return (
                 <li key={doc.id} className={styles.docItem}>
                   <div className={styles.docMain}>
-                    <span className={styles.docTitle}>{doc.title}</span>
+                    <div className={styles.docTitleRow}>
+                      <span
+                        className={styles.typeBadge}
+                        style={{ background: typeBadge.color + "22", color: typeBadge.color }}
+                      >
+                        {typeBadge.label}
+                      </span>
+                      <span className={styles.docTitle}>{doc.title}</span>
+                    </div>
                     <span className={styles.docMeta}>
-                      {doc.source_type.toUpperCase()} · {doc.chunk_count}개 청크
+                      {doc.chunk_count}개 청크
+                      {isUrl && doc.last_refreshed_at && (
+                        <> · 마지막 갱신: {formatDatetime(doc.last_refreshed_at)}</>
+                      )}
+                      {isUrl && doc.next_refresh_at && (
+                        <> · 다음 갱신: {formatDatetime(doc.next_refresh_at)}</>
+                      )}
                     </span>
+                    {isUrl && (
+                      <select
+                        className={styles.intervalSelect}
+                        value={doc.refresh_interval_hours}
+                        onChange={(e) => updateRefreshInterval(doc.id, Number(e.target.value))}
+                      >
+                        {REFRESH_INTERVAL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    )}
                     {doc.error_message && (
                       <span className={styles.docError}>{doc.error_message}</span>
                     )}
                   </div>
-                  <span className={styles.statusBadge} style={{ color: st.color }}>
-                    {st.label}
-                  </span>
-                  <button className={styles.deleteBtn} onClick={() => deleteDoc(doc.id)} aria-label="삭제">
-                    ×
-                  </button>
+                  <div className={styles.docActions}>
+                    {isUrl && (
+                      <button
+                        className={styles.refreshBtn}
+                        onClick={() => refreshDoc(doc.id)}
+                        disabled={isRefreshing || doc.status === "processing"}
+                        title="즉시 갱신"
+                      >
+                        {isRefreshing ? "…" : "↻"}
+                      </button>
+                    )}
+                    <span className={styles.statusBadge} style={{ color: st.color }}>
+                      {st.label}
+                    </span>
+                    <button className={styles.deleteBtn} onClick={() => deleteDoc(doc.id)} aria-label="삭제">
+                      ×
+                    </button>
+                  </div>
                 </li>
               );
             })}

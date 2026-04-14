@@ -47,6 +47,7 @@ class TenantUpdate(BaseModel):
     allowed_domains: str | None = None
     widget_config: dict | None = None
     is_active: bool | None = None
+    default_url_refresh_hours: int | None = None
 
 
 class TenantResponse(BaseModel):
@@ -60,6 +61,7 @@ class TenantResponse(BaseModel):
     allowed_domains: str
     widget_config: dict
     system_prompt: str | None
+    default_url_refresh_hours: int
 
     model_config = {"from_attributes": True}
 

@@ -3,6 +3,7 @@
 import logging
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
@@ -40,6 +41,9 @@ class DocumentResponse(BaseModel):
     status: str
     chunk_count: int
     error_message: str | None
+    refresh_interval_hours: int
+    last_refreshed_at: datetime | None
+    next_refresh_at: datetime | None
 
     model_config = {"from_attributes": True}
 
@@ -59,6 +63,7 @@ async def ingest_url(
         source_type="url",
         source_url=url_str,
         status="pending",
+        refresh_interval_hours=tenant.default_url_refresh_hours,
     )
     db.add(document)
     await db.flush()
@@ -129,6 +134,64 @@ async def list_documents(
     return result.scalars().all()
 
 
+class RefreshIntervalRequest(BaseModel):
+    refresh_interval_hours: int
+
+
+@router.post("/documents/{doc_id}/refresh", response_model=DocumentResponse, status_code=202)
+async def refresh_document(
+    doc_id: int,
+    background_tasks: BackgroundTasks,
+    tenant: Tenant = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+    embedding_client: EmbeddingClient = Depends(get_embedding_client),
+):
+    """URL 문서를 즉시 갱신한다."""
+    doc = await db.get(Document, doc_id)
+    if not doc or doc.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    if doc.source_type != "url":
+        raise HTTPException(status_code=400, detail="URL 문서만 갱신할 수 있습니다.")
+    if doc.status == "processing":
+        raise HTTPException(status_code=409, detail="이미 처리 중입니다.")
+
+    await db.execute(
+        update(Document).where(Document.id == doc_id).values(status="pending")
+    )
+    await db.commit()
+    await db.refresh(doc)
+
+    background_tasks.add_task(_run_url_ingest, doc_id, False, embedding_client)
+    return doc
+
+
+@router.patch("/documents/{doc_id}/refresh-interval", response_model=DocumentResponse)
+async def update_refresh_interval(
+    doc_id: int,
+    body: RefreshIntervalRequest,
+    tenant: Tenant = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    """URL 문서의 갱신 주기를 변경한다."""
+    doc = await db.get(Document, doc_id)
+    if not doc or doc.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    if doc.source_type != "url":
+        raise HTTPException(status_code=400, detail="URL 문서만 갱신 주기를 설정할 수 있습니다.")
+
+    now = datetime.now(timezone.utc)
+    interval = body.refresh_interval_hours
+    next_refresh = (now + timedelta(hours=interval)) if interval > 0 else None
+    await db.execute(
+        update(Document)
+        .where(Document.id == doc_id)
+        .values(refresh_interval_hours=interval, next_refresh_at=next_refresh)
+    )
+    await db.commit()
+    await db.refresh(doc)
+    return doc
+
+
 @router.delete("/documents/{doc_id}", status_code=204)
 async def delete_document(
     doc_id: int,
@@ -156,6 +219,15 @@ async def _run_url_ingest(
         try:
             service = IngestService(db=db, embedding_client=embedding_client)
             await service.ingest_url(document, crawl_full_site=crawl_full_site)
+            now = datetime.now(timezone.utc)
+            interval = document.refresh_interval_hours
+            next_refresh = (now + timedelta(hours=interval)) if interval > 0 else None
+            await db.execute(
+                update(Document)
+                .where(Document.id == doc_id)
+                .values(last_refreshed_at=now, next_refresh_at=next_refresh)
+            )
+            await db.commit()
             logger.info("URL 인제스트 완료: doc_id=%d", doc_id)
         except Exception as exc:
             logger.exception("URL 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)

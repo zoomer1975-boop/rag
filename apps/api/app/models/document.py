@@ -28,6 +28,11 @@ class Document(Base):
 
     doc_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
+    # URL 자동 갱신
+    refresh_interval_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = 비활성
+    last_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

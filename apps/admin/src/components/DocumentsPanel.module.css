@@ -70,7 +70,7 @@
   border-radius: var(--radius-md);
   padding: 14px 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
 }
 
@@ -102,10 +102,74 @@
   white-space: nowrap;
 }
 
+.docTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.typeBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.intervalSelect {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  padding: 3px 6px;
+  margin-top: 4px;
+  outline: none;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.intervalSelect:focus {
+  border-color: var(--color-accent);
+}
+
+.docActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
 .statusBadge {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.refreshBtn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .deleteBtn {

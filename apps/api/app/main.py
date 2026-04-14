@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.routers import admin, analytics, auth, chat, ingest, tenants
+from app.scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -22,7 +23,9 @@ WIDGET_DIR = pathlib.Path(__file__).parent.parent / "static" / "widget"
 async def lifespan(app: FastAPI):
     os.makedirs(settings.upload_dir, exist_ok=True)
     WIDGET_DIR.mkdir(parents=True, exist_ok=True)
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(

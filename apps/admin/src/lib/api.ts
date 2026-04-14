@@ -57,6 +57,7 @@ export interface Tenant {
   allowed_domains: string;
   widget_config: WidgetConfig;
   system_prompt: string | null;
+  default_url_refresh_hours: number;
 }
 
 export interface WidgetConfig {
@@ -76,6 +77,9 @@ export interface Document {
   status: string;
   chunk_count: number;
   error_message: string | null;
+  refresh_interval_hours: number;
+  last_refreshed_at: string | null;
+  next_refresh_at: string | null;
 }
 
 export interface Stats {

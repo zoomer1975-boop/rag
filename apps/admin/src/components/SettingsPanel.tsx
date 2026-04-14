@@ -36,6 +36,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     default_lang: tenant.default_lang,
     allowed_langs: tenant.allowed_langs,
     is_active: tenant.is_active,
+    default_url_refresh_hours: tenant.default_url_refresh_hours,
     widget_primary_color: tenant.widget_config.primary_color,
     widget_greeting: tenant.widget_config.greeting,
     widget_title: tenant.widget_config.title,
@@ -68,6 +69,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
           default_lang: form.default_lang,
           allowed_langs: form.allowed_langs,
           is_active: form.is_active,
+          default_url_refresh_hours: form.default_url_refresh_hours,
           widget_config: {
             primary_color: form.widget_primary_color,
             greeting: form.widget_greeting,
@@ -190,6 +192,26 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             />
           </Field>
         )}
+      </fieldset>
+
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>URL 자동 갱신</legend>
+        <Field label="기본 갱신 주기" hint="새 URL 문서 등록 시 기본으로 적용됩니다. 문서별로 개별 변경도 가능합니다.">
+          <select
+            className={styles.select}
+            value={form.default_url_refresh_hours}
+            onChange={(e) => setForm((prev) => ({ ...prev, default_url_refresh_hours: Number(e.target.value) }))}
+          >
+            <option value={0}>자동 갱신 안 함</option>
+            <option value={1}>1시간마다</option>
+            <option value={6}>6시간마다</option>
+            <option value={12}>12시간마다</option>
+            <option value={24}>24시간마다 (1일)</option>
+            <option value={48}>48시간마다 (2일)</option>
+            <option value={72}>72시간마다 (3일)</option>
+            <option value={168}>168시간마다 (1주)</option>
+          </select>
+        </Field>
       </fieldset>
 
       <fieldset className={styles.fieldset}>

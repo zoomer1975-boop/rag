@@ -44,6 +44,9 @@ class Tenant(Base):
     # 시스템 프롬프트 (테넌트별 커스텀)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # URL 자동 갱신 기본 주기 (시간, 0 = 비활성)
+    default_url_refresh_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
