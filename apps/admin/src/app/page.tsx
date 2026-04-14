@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { adminFetch, type Tenant, type SubAdmin } from "@/lib/api";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
 import CreateTenantForm from "@/components/CreateTenantForm";
@@ -30,13 +29,9 @@ export default function Home() {
   // 세션 로드
   useEffect(() => {
     const loadSession = async () => {
-      const token = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith(`${SESSION_COOKIE_NAME}=`))
-        ?.split("=")[1];
-
-      if (token) {
-        const payload = await verifySessionToken(token);
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const payload = await res.json();
         setSession(payload);
       }
     };
