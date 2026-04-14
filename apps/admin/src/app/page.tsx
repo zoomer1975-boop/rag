@@ -29,7 +29,7 @@ export default function Home() {
   // 세션 로드
   useEffect(() => {
     const loadSession = async () => {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/rag/admin/api/auth/me");
       if (res.ok) {
         const payload = await res.json();
         setSession(payload);
