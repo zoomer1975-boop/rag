@@ -170,6 +170,26 @@
   border-color: var(--color-accent);
 }
 
+.btnDanger {
+  background: transparent;
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btnDanger:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.btnDanger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btnGhost {
   background: transparent;
   color: var(--color-text-muted);
