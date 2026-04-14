@@ -17,12 +17,14 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 WIDGET_DIR = pathlib.Path(__file__).parent.parent / "static" / "widget"
+ICONS_DIR = pathlib.Path(__file__).parent.parent / "static" / "icons"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.upload_dir, exist_ok=True)
     WIDGET_DIR.mkdir(parents=True, exist_ok=True)
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
     start_scheduler()
     yield
     stop_scheduler()
@@ -57,6 +59,17 @@ async def serve_widget(filename: str):
     if "/" in filename or "\\" in filename or filename.startswith("."):
         raise HTTPException(status_code=400, detail="Invalid filename")
     file_path = WIDGET_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(file_path))
+
+
+@app.get("/static/icons/{filename}")
+async def serve_icon(filename: str):
+    # path traversal 방지
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    file_path = ICONS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(str(file_path))

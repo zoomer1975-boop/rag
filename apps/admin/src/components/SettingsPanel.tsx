@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { adminFetch, type Tenant } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { adminFetch, deleteTenantIcon, uploadTenantIcon, type Tenant } from "@/lib/api";
 import styles from "./SettingsPanel.module.css";
 
 // ─── Domain Whitelist helpers ────────────────────────────────────────────────
@@ -52,6 +52,25 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   const [domainError, setDomainError] = useState<string | null>(null);
   const [newQuickReply, setNewQuickReply] = useState("");
 
+  // 아이콘 관련 상태
+  const [iconMode, setIconMode] = useState<"default" | "custom">(
+    tenant.widget_config.button_icon_url ? "custom" : "default"
+  );
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(
+    tenant.widget_config.button_icon_url ?? null
+  );
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const prevObjectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (prevObjectUrlRef.current) URL.revokeObjectURL(prevObjectUrlRef.current);
+    };
+  }, []);
+
   function set(key: keyof typeof form, value: string | boolean) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -77,6 +96,9 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             placeholder: form.widget_placeholder,
             position: form.widget_position,
             quick_replies: form.quick_replies,
+            ...(tenant.widget_config.button_icon_url
+              ? { button_icon_url: tenant.widget_config.button_icon_url }
+              : {}),
           },
         }),
       });
@@ -121,6 +143,65 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
       onUpdated(updated);
     } finally {
       setDomainSaving(false);
+    }
+  }
+
+  function handleIconFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIconError(null);
+
+    // 이전 ObjectURL 해제
+    if (prevObjectUrlRef.current) {
+      URL.revokeObjectURL(prevObjectUrlRef.current);
+    }
+    const objectUrl = URL.createObjectURL(file);
+    prevObjectUrlRef.current = objectUrl;
+    setIconFile(file);
+    setIconPreviewUrl(objectUrl);
+  }
+
+  async function uploadIcon() {
+    if (!iconFile) return;
+    setIconUploading(true);
+    setIconError(null);
+    try {
+      const updated = await uploadTenantIcon(tenant.id, iconFile);
+      onUpdated(updated);
+      // ObjectURL → 실제 서버 URL로 교체
+      if (prevObjectUrlRef.current) {
+        URL.revokeObjectURL(prevObjectUrlRef.current);
+        prevObjectUrlRef.current = null;
+      }
+      setIconFile(null);
+      setIconPreviewUrl(updated.widget_config.button_icon_url ?? null);
+      if (iconInputRef.current) iconInputRef.current.value = "";
+    } catch (e) {
+      setIconError(e instanceof Error ? e.message : "업로드 실패");
+    } finally {
+      setIconUploading(false);
+    }
+  }
+
+  async function resetIcon() {
+    if (!confirm("기본 아이콘으로 리셋하시겠습니까?")) return;
+    setIconUploading(true);
+    setIconError(null);
+    try {
+      const updated = await deleteTenantIcon(tenant.id);
+      onUpdated(updated);
+      setIconMode("default");
+      setIconFile(null);
+      setIconPreviewUrl(null);
+      if (prevObjectUrlRef.current) {
+        URL.revokeObjectURL(prevObjectUrlRef.current);
+        prevObjectUrlRef.current = null;
+      }
+      if (iconInputRef.current) iconInputRef.current.value = "";
+    } catch (e) {
+      setIconError(e instanceof Error ? e.message : "리셋 실패");
+    } finally {
+      setIconUploading(false);
     }
   }
 
@@ -246,6 +327,98 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             <option value="bottom-right">우하단</option>
             <option value="bottom-left">좌하단</option>
           </select>
+        </Field>
+
+        <Field label="버튼 아이콘" hint="위젯 열기/닫기 버튼에 표시되는 아이콘입니다.">
+          <div className={styles.iconModeRow}>
+            <label className={styles.radioLabel}>
+              <input
+                type="radio"
+                name="iconMode"
+                value="default"
+                checked={iconMode === "default"}
+                onChange={() => setIconMode("default")}
+              />
+              기본 아이콘 (SVG)
+            </label>
+            <label className={styles.radioLabel}>
+              <input
+                type="radio"
+                name="iconMode"
+                value="custom"
+                checked={iconMode === "custom"}
+                onChange={() => setIconMode("custom")}
+              />
+              사용자 이미지
+            </label>
+          </div>
+
+          <div className={styles.iconPreviewRow}>
+            <div className={styles.iconPreviewBox} style={{ background: form.widget_primary_color }}>
+              {iconMode === "custom" && iconPreviewUrl ? (
+                <img
+                  src={iconPreviewUrl}
+                  alt="아이콘 미리보기"
+                  style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                </svg>
+              )}
+            </div>
+            <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>56×56px 미리보기</span>
+          </div>
+
+          {iconMode === "custom" && (
+            <div className={styles.iconUploadArea}>
+              <input
+                ref={iconInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                className={styles.fileInput}
+                onChange={handleIconFileChange}
+              />
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 4 }}>
+                PNG/JPG/GIF/WebP · 권장 56×56px · 최대 2MB
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  style={{ background: "var(--color-surface-2)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}
+                  onClick={() => iconInputRef.current?.click()}
+                  disabled={iconUploading}
+                >
+                  파일 선택{iconFile ? ` (${iconFile.name})` : ""}
+                </button>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  disabled={!iconFile || iconUploading}
+                  onClick={uploadIcon}
+                >
+                  {iconUploading ? "업로드 중…" : "업로드"}
+                </button>
+                {tenant.widget_config.button_icon_url && (
+                  <button
+                    type="button"
+                    className={styles.btnDanger}
+                    disabled={iconUploading}
+                    onClick={resetIcon}
+                    style={{ fontSize: 13 }}
+                  >
+                    기본으로 리셋
+                  </button>
+                )}
+              </div>
+              {iconError && (
+                <p style={{ fontSize: 12, color: "var(--color-danger, #e53e3e)", marginTop: 6 }}>
+                  {iconError}
+                </p>
+              )}
+            </div>
+          )}
         </Field>
       </fieldset>
 

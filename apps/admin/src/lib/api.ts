@@ -44,6 +44,24 @@ export async function adminFetch<T>(
   return res.json();
 }
 
+export async function uploadTenantIcon(tenantId: number, file: File): Promise<Tenant> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${ADMIN_BASE}/tenants/${tenantId}/icon`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || res.statusText);
+  }
+  return res.json();
+}
+
+export async function deleteTenantIcon(tenantId: number): Promise<Tenant> {
+  return adminFetch<Tenant>(`/tenants/${tenantId}/icon`, { method: "DELETE" });
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface Tenant {
@@ -67,6 +85,7 @@ export interface WidgetConfig {
   title: string;
   placeholder: string;
   quick_replies?: string[];
+  button_icon_url?: string;
 }
 
 export interface Document {

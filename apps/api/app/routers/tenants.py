@@ -1,14 +1,19 @@
 """테넌트 관리 API"""
 
 import json
+import pathlib
 import re
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+ICONS_DIR = pathlib.Path(__file__).parent.parent.parent / "static" / "icons"
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+MAX_ICON_SIZE = 2 * 1024 * 1024  # 2MB
 
 _DOMAIN_RE = re.compile(
     r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
@@ -183,6 +188,72 @@ async def add_domain(
 
     domains.append(domain)
     tenant.allowed_domains = ",".join(domains)
+    await db.flush()
+    await db.refresh(tenant)
+    await db.commit()
+    return tenant
+
+
+@router.post("/{tenant_id}/icon", response_model=TenantResponse)
+async def upload_icon(
+    tenant_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """위젯 버튼 아이콘 이미지 업로드"""
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
+
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="이미지 파일(PNG/JPG/GIF/WebP)만 업로드할 수 있습니다.")
+
+    contents = await file.read()
+    if len(contents) > MAX_ICON_SIZE:
+        raise HTTPException(status_code=400, detail="파일 크기는 2MB를 초과할 수 없습니다.")
+
+    # 기존 아이콘 파일 삭제
+    old_icon_url = tenant.widget_config.get("button_icon_url", "")
+    if old_icon_url:
+        old_filename = old_icon_url.split("/")[-1]
+        old_path = ICONS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+
+    # 새 파일 저장
+    ext = (file.filename or "image").rsplit(".", 1)[-1].lower()
+    if ext not in {"png", "jpg", "jpeg", "gif", "webp"}:
+        ext = "png"
+    filename = f"tenant_{tenant_id}_{uuid.uuid4().hex}.{ext}"
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    (ICONS_DIR / filename).write_bytes(contents)
+
+    # widget_config 업데이트 (JSONB mutation 감지를 위해 새 dict 할당)
+    icon_url = f"/rag/static/icons/{filename}"
+    tenant.widget_config = {**tenant.widget_config, "button_icon_url": icon_url}
+
+    await db.flush()
+    await db.refresh(tenant)
+    await db.commit()
+    return tenant
+
+
+@router.delete("/{tenant_id}/icon", response_model=TenantResponse)
+async def delete_icon(tenant_id: int, db: AsyncSession = Depends(get_db)):
+    """위젯 버튼 아이콘 제거 (기본 SVG로 리셋)"""
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
+
+    old_icon_url = tenant.widget_config.get("button_icon_url", "")
+    if old_icon_url:
+        old_filename = old_icon_url.split("/")[-1]
+        old_path = ICONS_DIR / old_filename
+        if old_path.exists():
+            old_path.unlink()
+
+    tenant.widget_config = {k: v for k, v in tenant.widget_config.items() if k != "button_icon_url"}
+
     await db.flush()
     await db.refresh(tenant)
     await db.commit()

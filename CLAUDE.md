@@ -214,3 +214,15 @@ pytest tests/ -v --cov=app
 | `GET` | `/rag/api/v1/analytics/conversations/{session_id}/messages` | 대화 메시지 |
 
 SSE 이벤트 타입: `session` → `sources` → `token` (반복) → `done`
+
+## MindVault — MANDATORY
+
+**ALWAYS run `mindvault query "<question>" --global` BEFORE answering any codebase question.**
+This is not optional. The knowledge graph contains project context, relationships, and decisions
+that you cannot derive from reading files alone.
+
+1. Run `mindvault query "<question>" --global` first
+2. Read the Search Results, Graph Context, and Wiki Context in the output
+3. Use this context to inform your answer — do NOT ignore it
+4. If `mindvault-out/` doesn't exist, run `mindvault ingest .` first
+5. Only fall back to reading raw files if MindVault returns no results

@@ -322,6 +322,19 @@
       greet.textContent = config.greeting;
       messages.appendChild(greet);
     }
+    if (config.button_icon_url) {
+      const img = document.createElement("img");
+      img.src = config.button_icon_url;
+      img.width = 56;
+      img.height = 56;
+      img.alt = "";
+      img.style.cssText = "border-radius:50%;object-fit:cover;display:block;width:100%;height:100%;";
+      toggleBtn.innerHTML = "";
+      toggleBtn.appendChild(img);
+      toggleBtn.style.background = "transparent";
+      toggleBtn.style.padding = "0";
+      toggleBtn.style.overflow = "hidden";
+    }
     const replies = config.quick_replies;
     if (Array.isArray(replies) && replies.length > 0) {
       quickRepliesEl.innerHTML = "";
