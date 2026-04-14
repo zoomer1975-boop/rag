@@ -238,7 +238,7 @@ async def _run_url_ingest(
                 await db.execute(
                     update(Document)
                     .where(Document.id == doc_id)
-                    .values(status="failed", error_message=str(exc)[:1000])
+                    .values(status="failed", error_message="인제스트 처리 중 오류가 발생했습니다.")
                 )
                 await db.commit()
             except Exception:
@@ -265,7 +265,7 @@ async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> No
                 await db.execute(
                     update(Document)
                     .where(Document.id == doc_id)
-                    .values(status="failed", error_message=str(exc)[:1000])
+                    .values(status="failed", error_message="인제스트 처리 중 오류가 발생했습니다.")
                 )
                 await db.commit()
             except Exception:

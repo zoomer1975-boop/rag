@@ -24,6 +24,7 @@ export async function apiFetch<T>(
 // ─── Tenant management (no API key needed — admin endpoints) ─────────────────
 
 const ADMIN_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/rag/api/v1";
+const ADMIN_API_TOKEN = process.env.NEXT_PUBLIC_ADMIN_API_TOKEN ?? "";
 
 export async function adminFetch<T>(
   path: string,
@@ -33,6 +34,7 @@ export async function adminFetch<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
+      "X-Admin-Token": ADMIN_API_TOKEN,
       ...(options.headers ?? {}),
     },
   });
@@ -49,6 +51,7 @@ export async function uploadTenantIcon(tenantId: number, file: File): Promise<Te
   formData.append("file", file);
   const res = await fetch(`${ADMIN_BASE}/tenants/${tenantId}/icon`, {
     method: "POST",
+    headers: { "X-Admin-Token": ADMIN_API_TOKEN },
     body: formData,
   });
   if (!res.ok) {

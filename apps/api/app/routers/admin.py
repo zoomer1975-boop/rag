@@ -9,23 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import get_db
+from app.middleware.auth import verify_admin
 from app.models.sub_admin import SubAdmin, sub_admin_tenants
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
-
-
-# ─── Dependency: 최고관리자 인증 체크 ────────────────────────────────────────
-
-
-async def verify_superadmin(
-    # X-Admin-Token 헤더로 검증 (추후 구현)
-    # 지금은 간단하게 설정 기반 검증
-):
-    """최고관리자 인증 검증 (placeholder)
-
-    추후 X-Admin-Token 헤더 기반 검증으로 변경
-    """
-    pass
 
 
 # ─── Request/Response Models ──────────────────────────────────────────────────
@@ -71,9 +58,9 @@ class SubAdminResponse(BaseModel):
 @router.get("/sub-admins", response_model=list[SubAdminResponse])
 async def list_sub_admins(
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """부관리자 목록 조회 (최고관리자만)"""
-    # Note: 추후 verify_superadmin 추가
     result = await db.execute(select(SubAdmin).order_by(SubAdmin.created_at.desc()))
     sub_admins = result.scalars().all()
 
@@ -101,10 +88,9 @@ async def list_sub_admins(
 async def create_sub_admin(
     body: SubAdminCreate,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """부관리자 생성 (최고관리자만)"""
-    # Note: 추후 verify_superadmin 추가
-
     # username 중복 체크
     existing = await db.execute(
         select(SubAdmin).where(SubAdmin.username == body.username)
@@ -148,10 +134,9 @@ async def update_sub_admin(
     sub_admin_id: int,
     body: SubAdminUpdate,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """부관리자 수정 (최고관리자만)"""
-    # Note: 추후 verify_superadmin 추가
-
     sub_admin = await db.get(SubAdmin, sub_admin_id)
     if not sub_admin:
         raise HTTPException(
@@ -208,10 +193,9 @@ async def update_sub_admin(
 async def delete_sub_admin(
     sub_admin_id: int,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """부관리자 삭제 (최고관리자만)"""
-    # Note: 추후 verify_superadmin 추가
-
     sub_admin = await db.get(SubAdmin, sub_admin_id)
     if not sub_admin:
         raise HTTPException(

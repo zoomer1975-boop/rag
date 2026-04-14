@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import get_db
+from app.middleware.auth import verify_admin
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.tenant import Tenant
@@ -33,6 +34,8 @@ from app.services.llm import get_llm_client
 from app.services.rag import RAGService
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
+
+MAX_DOMAINS_PER_TENANT = 50
 
 
 class TenantCreate(BaseModel):
@@ -54,7 +57,7 @@ class TenantUpdate(BaseModel):
     allowed_domains: str | None = None
     widget_config: dict | None = None
     is_active: bool | None = None
-    default_url_refresh_hours: int | None = None
+    default_url_refresh_hours: int | None = Field(None, ge=0, le=8760)  # 0 = 비활성, 최대 1년
 
 
 class TenantResponse(BaseModel):
@@ -74,13 +77,20 @@ class TenantResponse(BaseModel):
 
 
 @router.get("/", response_model=list[TenantResponse])
-async def list_tenants(db: AsyncSession = Depends(get_db)):
+async def list_tenants(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     result = await db.execute(select(Tenant).order_by(Tenant.created_at.desc()))
     return result.scalars().all()
 
 
 @router.post("/", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
-async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
+async def create_tenant(
+    body: TenantCreate,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     default_widget = {
         "primary_color": "#0066ff",
         "greeting": "안녕하세요! 무엇을 도와드릴까요?",
@@ -107,7 +117,11 @@ async def create_tenant(body: TenantCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{tenant_id}", response_model=TenantResponse)
-async def get_tenant(tenant_id: int, db: AsyncSession = Depends(get_db)):
+async def get_tenant(
+    tenant_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
@@ -116,7 +130,10 @@ async def get_tenant(tenant_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{tenant_id}", response_model=TenantResponse)
 async def update_tenant(
-    tenant_id: int, body: TenantUpdate, db: AsyncSession = Depends(get_db)
+    tenant_id: int,
+    body: TenantUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
@@ -147,7 +164,11 @@ async def update_tenant(
 
 
 @router.post("/{tenant_id}/rotate-key", response_model=TenantResponse)
-async def rotate_api_key(tenant_id: int, db: AsyncSession = Depends(get_db)):
+async def rotate_api_key(
+    tenant_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
@@ -158,7 +179,11 @@ async def rotate_api_key(tenant_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_tenant(
+    tenant_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
@@ -172,7 +197,10 @@ class DomainAdd(BaseModel):
 
 @router.post("/{tenant_id}/domains", response_model=TenantResponse)
 async def add_domain(
-    tenant_id: int, body: DomainAdd, db: AsyncSession = Depends(get_db)
+    tenant_id: int,
+    body: DomainAdd,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """도메인 화이트리스트에 도메인 추가"""
     tenant = await db.get(Tenant, tenant_id)
@@ -185,6 +213,8 @@ async def add_domain(
         raise HTTPException(status_code=400, detail="유효하지 않은 도메인 형식입니다.")
     if domain in domains:
         return tenant  # already present — idempotent
+    if len(domains) >= MAX_DOMAINS_PER_TENANT:
+        raise HTTPException(status_code=400, detail=f"도메인은 최대 {MAX_DOMAINS_PER_TENANT}개까지 등록할 수 있습니다.")
 
     domains.append(domain)
     tenant.allowed_domains = ",".join(domains)
@@ -199,6 +229,7 @@ async def upload_icon(
     tenant_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """위젯 버튼 아이콘 이미지 업로드"""
     tenant = await db.get(Tenant, tenant_id)
@@ -239,7 +270,11 @@ async def upload_icon(
 
 
 @router.delete("/{tenant_id}/icon", response_model=TenantResponse)
-async def delete_icon(tenant_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_icon(
+    tenant_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+):
     """위젯 버튼 아이콘 제거 (기본 SVG로 리셋)"""
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
@@ -262,7 +297,10 @@ async def delete_icon(tenant_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.delete("/{tenant_id}/domains/{domain_index}", response_model=TenantResponse)
 async def remove_domain(
-    tenant_id: int, domain_index: int, db: AsyncSession = Depends(get_db)
+    tenant_id: int,
+    domain_index: int,
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
 ):
     """도메인 화이트리스트에서 도메인 제거 (0-based index)"""
     tenant = await db.get(Tenant, tenant_id)
@@ -296,6 +334,7 @@ async def admin_chat_test(
     db: AsyncSession = Depends(get_db),
     llm_client=Depends(get_llm_client),
     embedding_client=Depends(get_embedding_client),
+    _: None = Depends(verify_admin),
 ):
     """어드민 전용 채팅 테스트 — 도메인 검증 없이 RAG 채팅을 직접 실행."""
     tenant = await db.get(Tenant, tenant_id)

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
         "Path=/",
         "HttpOnly",
         "Secure",
-        "SameSite=Lax",
+        "SameSite=Strict",
       ].join("; ");
 
       return new Response(JSON.stringify({ ok: true }), {
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
       "Path=/",
       "HttpOnly",
       "Secure",
-      "SameSite=Lax",
+      "SameSite=Strict",
     ].join("; ");
 
     return new Response(JSON.stringify({ ok: true }), {

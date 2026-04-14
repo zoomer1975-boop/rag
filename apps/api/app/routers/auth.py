@@ -1,5 +1,8 @@
 """관리자 인증 라우터"""
 
+import logging
+
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -10,6 +13,32 @@ from app.db.session import get_db
 from app.models.sub_admin import SubAdmin
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+
+_LOGIN_RATE_LIMIT = 10   # 최대 시도 횟수
+_LOGIN_RATE_WINDOW = 60  # 초
+
+
+async def _check_login_rate_limit(client_ip: str) -> None:
+    """Redis를 이용한 로그인 시도 속도 제한 (IP당 60초에 최대 10회)."""
+    settings = get_settings()
+    try:
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        key = f"login_attempts:{client_ip}"
+        count = await r.incr(key)
+        if count == 1:
+            await r.expire(key, _LOGIN_RATE_WINDOW)
+        await r.aclose()
+        if count > _LOGIN_RATE_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="너무 많은 로그인 시도입니다. 잠시 후 다시 시도하세요.",
+                headers={"Retry-After": str(_LOGIN_RATE_WINDOW)},
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("로그인 속도 제한 Redis 오류 — 제한 없이 진행합니다.")
 
 
 class LoginRequest(BaseModel):
@@ -50,6 +79,8 @@ async def login(
     settings = get_settings()
     client_ip = _get_client_ip(request)
 
+    await _check_login_rate_limit(client_ip)
+
     # 1. 최고관리자 체크
     if req.username == settings.admin_username and req.password == settings.admin_password:
         return LoginResponse(ok=True, is_superadmin=True)
@@ -80,7 +111,7 @@ async def login(
     if not sub_admin.is_ip_allowed(client_ip):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"IP 주소 {client_ip}는 허용되지 않습니다.",
+            detail="이 IP 주소에서는 접근이 허용되지 않습니다.",
         )
 
     # tenant_ids 조회 (association table 통해)

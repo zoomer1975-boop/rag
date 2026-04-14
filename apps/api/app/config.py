@@ -1,5 +1,14 @@
+import logging
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+_INSECURE_DEFAULTS = {
+    "secret_key": "change-me-to-a-random-secret-key",
+    "admin_password": "change-me",
+}
 
 
 class Settings(BaseSettings):
@@ -30,6 +39,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-to-a-random-secret-key"
     admin_username: str = "admin"
     admin_password: str = "change-me"
+    admin_api_token: str = ""
 
     # 다국어
     default_language: str = "ko"
@@ -57,4 +67,16 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    for field, insecure_val in _INSECURE_DEFAULTS.items():
+        if getattr(settings, field) == insecure_val:
+            logger.warning(
+                "[보안 경고] %s 가 기본값으로 설정되어 있습니다. 프로덕션 환경에서는 반드시 변경하세요.",
+                field.upper(),
+            )
+    if not settings.admin_api_token:
+        logger.warning(
+            "[보안 경고] ADMIN_API_TOKEN 이 설정되지 않았습니다. "
+            "관리자 API 엔드포인트가 인증 없이 노출됩니다."
+        )
+    return settings
