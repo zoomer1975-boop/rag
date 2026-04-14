@@ -21,16 +21,6 @@ const SOURCE_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   md: { label: "MD", color: "#6b7280" },
 };
 
-const REFRESH_INTERVAL_OPTIONS = [
-  { value: 0, label: "자동 갱신 안 함" },
-  { value: 1, label: "1시간마다" },
-  { value: 6, label: "6시간마다" },
-  { value: 12, label: "12시간마다" },
-  { value: 24, label: "24시간마다 (1일)" },
-  { value: 48, label: "48시간마다 (2일)" },
-  { value: 72, label: "72시간마다 (3일)" },
-  { value: 168, label: "168시간마다 (1주)" },
-];
 
 function formatDatetime(iso: string | null): string {
   if (!iso) return "—";
@@ -118,14 +108,6 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
     }
   }
 
-  async function updateRefreshInterval(id: number, hours: number) {
-    const updated = await apiFetch<Document>(`/ingest/documents/${id}/refresh-interval`, apiKey, {
-      method: "PATCH",
-      body: JSON.stringify({ refresh_interval_hours: hours }),
-    });
-    setDocs((prev) => prev.map((d) => (d.id === id ? updated : d)));
-  }
-
   return (
     <div>
       <h2 className={styles.heading}>문서 관리</h2>
@@ -200,17 +182,6 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
                         <> · 다음 갱신: {formatDatetime(doc.next_refresh_at)}</>
                       )}
                     </span>
-                    {isUrl && (
-                      <select
-                        className={styles.intervalSelect}
-                        value={doc.refresh_interval_hours}
-                        onChange={(e) => updateRefreshInterval(doc.id, Number(e.target.value))}
-                      >
-                        {REFRESH_INTERVAL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    )}
                     {doc.error_message && (
                       <span className={styles.docError}>{doc.error_message}</span>
                     )}

@@ -4,6 +4,7 @@ import json
 import re
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -13,12 +14,13 @@ _DOMAIN_RE = re.compile(
     r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
     re.IGNORECASE,
 )
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import get_db
 from app.models.conversation import Conversation, Message
+from app.models.document import Document
 from app.models.tenant import Tenant
 from app.services.embeddings import get_embedding_client
 from app.services.language import LanguageService
@@ -115,8 +117,24 @@ async def update_tenant(
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    update_data = body.model_dump(exclude_none=True)
+    new_interval = update_data.get("default_url_refresh_hours")
+
+    for field, value in update_data.items():
         setattr(tenant, field, value)
+
+    # 갱신 주기가 변경된 경우 기존 URL 문서 전체에 반영
+    if new_interval is not None:
+        now = datetime.now(timezone.utc)
+        next_refresh = (now + timedelta(hours=new_interval)) if new_interval > 0 else None
+        await db.execute(
+            update(Document)
+            .where(Document.tenant_id == tenant_id, Document.source_type == "url")
+            .values(
+                refresh_interval_hours=new_interval,
+                next_refresh_at=next_refresh,
+            )
+        )
 
     await db.flush()
     await db.refresh(tenant)
