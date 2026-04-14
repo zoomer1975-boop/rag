@@ -217,10 +217,12 @@ async def _run_url_ingest(
             logger.warning("URL 인제스트: doc_id=%d 문서 없음", doc_id)
             return
         try:
+            # ingest_url 내부에서 db.commit()이 호출되면 document 객체가 expired 되므로
+            # 미리 값을 읽어둔다
+            interval = document.refresh_interval_hours
             service = IngestService(db=db, embedding_client=embedding_client)
             await service.ingest_url(document, crawl_full_site=crawl_full_site)
             now = datetime.now(timezone.utc)
-            interval = document.refresh_interval_hours
             next_refresh = (now + timedelta(hours=interval)) if interval > 0 else None
             await db.execute(
                 update(Document)

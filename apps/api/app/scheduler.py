@@ -42,9 +42,11 @@ async def _refresh_due_urls() -> None:
             if not document:
                 continue
             try:
+                # ingest_url 내부 commit 후 document 객체가 expired 되므로 미리 읽어둔다
+                interval = document.refresh_interval_hours
                 service = IngestService(db=db, embedding_client=embedding_client)
                 await service.ingest_url(document, crawl_full_site=False)
-                await _update_refresh_timestamps(db, document)
+                await _update_refresh_timestamps(db, document.id, interval)
                 logger.info("자동 갱신 완료: doc_id=%d", doc.id)
             except Exception as exc:
                 logger.exception("자동 갱신 실패: doc_id=%d error=%s", doc.id, exc)
