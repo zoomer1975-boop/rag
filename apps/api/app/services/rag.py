@@ -1,5 +1,7 @@
 """RAG 파이프라인 — 검색 + 프롬프트 조립"""
 
+import logging
+
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,8 @@ from app.models.chunk import Chunk
 from app.models.tenant import Tenant
 from app.services.embeddings import EmbeddingClient
 from app.services.language import LanguageService
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a helpful assistant for {tenant_name}.
 Use the following context to answer the user's question accurately.
@@ -35,9 +39,12 @@ class RAGService:
         query: str,
         tenant_id: int,
         top_k: int = 5,
+        min_score: float = 0.3,
     ) -> list[dict]:
         """쿼리와 유사한 청크를 테넌트 격리 하에 검색합니다."""
         query_embedding = await self._embedding_client.embed(query)
+        embedding_dim = len(query_embedding)
+        logger.debug("retrieve: tenant_id=%d, query=%r, embedding_dim=%d", tenant_id, query[:80], embedding_dim)
 
         # pgvector cosine similarity 검색 (tenant_id 필터로 격리 보장)
         result = await self._db.execute(
@@ -60,7 +67,7 @@ class RAGService:
         )
         rows = result.fetchall()
 
-        return [
+        chunks = [
             {
                 "id": row.id,
                 "content": row.content,
@@ -69,6 +76,21 @@ class RAGService:
             }
             for row in rows
         ]
+
+        # 점수 로깅 (디버깅용)
+        for i, c in enumerate(chunks):
+            logger.info(
+                "chunk[%d]: id=%s score=%.4f preview=%r",
+                i, c["id"], c["score"], c["content"][:100],
+            )
+
+        # 최소 유사도 미달 청크 제거
+        filtered = [c for c in chunks if c["score"] >= min_score]
+        logger.info(
+            "retrieve: total=%d, filtered(score>=%.2f)=%d",
+            len(chunks), min_score, len(filtered),
+        )
+        return filtered
 
     def build_messages(
         self,
@@ -88,9 +110,11 @@ class RAGService:
         )
 
         context = "\n\n---\n\n".join(
-            f"[Source {i + 1}]\n{chunk['content']}"
+            f"[Source {i + 1}] (score: {chunk['score']:.2f})\n{chunk['content']}"
             for i, chunk in enumerate(retrieved_chunks)
         )
+
+        logger.info("build_messages: chunk_count=%d, context_chars=%d", len(retrieved_chunks), len(context))
 
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             tenant_name=tenant.name,
