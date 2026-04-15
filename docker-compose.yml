@@ -58,6 +58,8 @@ services:
     env_file: .env
     environment:
       NEXT_PUBLIC_API_URL: /rag/api/v1
+      # 서버 사이드 프록시가 Docker 내부 네트워크로 FastAPI를 호출할 때 사용
+      INTERNAL_API_URL: http://api:8000
     ports:
       - "3005:3000"
     depends_on:

@@ -21,20 +21,21 @@ export async function apiFetch<T>(
   return res.json();
 }
 
-// ─── Tenant management (no API key needed — admin endpoints) ─────────────────
+// ─── Tenant management (admin endpoints — routed through server-side proxy) ───
+//
+// 클라이언트는 /api/admin/... Next.js 프록시를 통해 FastAPI를 호출합니다.
+// ADMIN_API_TOKEN은 서버 사이드에서만 읽으므로 빌드 시점 이슈가 없습니다.
 
-const ADMIN_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/rag/api/v1";
-const ADMIN_API_TOKEN = process.env.NEXT_PUBLIC_ADMIN_API_TOKEN ?? "";
+const ADMIN_PROXY = "/api/admin";
 
 export async function adminFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${ADMIN_BASE}${path}`, {
+  const res = await fetch(`${ADMIN_PROXY}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "X-Admin-Token": ADMIN_API_TOKEN,
       ...(options.headers ?? {}),
     },
   });
@@ -49,9 +50,8 @@ export async function adminFetch<T>(
 export async function uploadTenantIcon(tenantId: number, file: File): Promise<Tenant> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${ADMIN_BASE}/tenants/${tenantId}/icon`, {
+  const res = await fetch(`${ADMIN_PROXY}/tenants/${tenantId}/icon`, {
     method: "POST",
-    headers: { "X-Admin-Token": ADMIN_API_TOKEN },
     body: formData,
   });
   if (!res.ok) {

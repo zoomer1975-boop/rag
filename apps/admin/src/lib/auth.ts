@@ -10,14 +10,19 @@ interface SessionPayload {
 }
 
 function getSecret(): string {
-  const secret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD;
-  if (!secret) {
+  const sessionSecret = process.env.ADMIN_SESSION_SECRET;
+  if (sessionSecret) {
+    if (sessionSecret.length < 32) {
+      throw new Error("ADMIN_SESSION_SECRET은 최소 32자 이상이어야 합니다.");
+    }
+    return sessionSecret;
+  }
+
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword) {
     throw new Error("ADMIN_SESSION_SECRET (또는 ADMIN_PASSWORD) 환경변수가 설정되지 않았습니다.");
   }
-  if (secret.length < 32) {
-    throw new Error("ADMIN_SESSION_SECRET은 최소 32자 이상이어야 합니다.");
-  }
-  return secret;
+  return adminPassword;
 }
 
 async function getHmacKey(secret: string): Promise<CryptoKey> {
