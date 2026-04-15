@@ -28,7 +28,7 @@ async def get_tenant(
 
 
 async def verify_admin(
-    x_admin_token: str = Header(..., alias="X-Admin-Token"),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
 ) -> None:
     """X-Admin-Token 헤더로 관리자 인증을 검증합니다."""
     settings = get_settings()
@@ -37,7 +37,7 @@ async def verify_admin(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="관리자 API 토큰이 서버에 설정되지 않았습니다.",
         )
-    if x_admin_token != settings.admin_api_token:
+    if not x_admin_token or x_admin_token != settings.admin_api_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 관리자 토큰입니다.",
