@@ -136,6 +136,8 @@ async def chat(
         conversation_history=history,
         tenant=tenant,
         lang_code=resolved_lang,
+        policy=tenant.lang_policy,
+        allowed_langs=tenant.allowed_lang_list,
     )
     sources = rag_service.build_sources(retrieved_chunks)
 

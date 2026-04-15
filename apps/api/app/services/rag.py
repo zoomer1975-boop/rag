@@ -77,9 +77,15 @@ class RAGService:
         conversation_history: list[dict],
         tenant: Tenant,
         lang_code: str,
+        policy: str = "fixed",
+        allowed_langs: list[str] | None = None,
     ) -> list[dict[str, str]]:
         """LLM에 전달할 메시지 목록을 조립합니다."""
-        lang_instruction = self._language_service.build_lang_instruction(lang_code)
+        lang_instruction = self._language_service.build_lang_instruction(
+            lang_code,
+            policy=policy,
+            allowed_langs=allowed_langs,
+        )
 
         context = "\n\n---\n\n".join(
             f"[Source {i + 1}]\n{chunk['content']}"

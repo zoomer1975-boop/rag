@@ -13,6 +13,27 @@ LANG_INSTRUCTIONS: dict[str, str] = {
     "th": "คุณต้องตอบเป็นภาษาไทย",
 }
 
+LANG_NAMES: dict[str, str] = {
+    "ko": "Korean (한국어)",
+    "en": "English",
+    "ja": "Japanese (日本語)",
+    "zh": "Chinese (中文)",
+    "es": "Spanish (Español)",
+    "fr": "French (Français)",
+    "de": "German (Deutsch)",
+    "pt": "Portuguese (Português)",
+    "vi": "Vietnamese (Tiếng Việt)",
+    "th": "Thai (ภาษาไทย)",
+}
+
+# auto 정책: 사용자가 쓴 언어 그대로 답변
+AUTO_LANG_INSTRUCTION = (
+    "Detect the language of the user's message and respond in that exact same language. "
+    "If the user writes in Korean, respond in Korean. "
+    "If the user writes in English, respond in English. "
+    "Always match the user's language precisely — do not switch languages."
+)
+
 KNOWN_LANGUAGES = set(LANG_INSTRUCTIONS.keys())
 
 
@@ -83,10 +104,35 @@ class LanguageService:
         # auto
         return detected if detected in KNOWN_LANGUAGES else default_lang
 
-    def build_lang_instruction(self, lang_code: str) -> str:
-        """LLM 시스템 프롬프트에 삽입할 언어 지시문을 반환합니다."""
+    def build_lang_instruction(
+        self,
+        lang_code: str,
+        policy: str = "fixed",
+        allowed_langs: list[str] | None = None,
+    ) -> str:
+        """LLM 시스템 프롬프트에 삽입할 언어 지시문을 반환합니다.
+
+        Args:
+            lang_code: resolve_lang()으로 결정된 최종 언어 코드
+            policy: "auto" | "fixed" | "whitelist"
+            allowed_langs: whitelist 정책의 허용 언어 목록
+        """
+        if policy == "auto":
+            return AUTO_LANG_INSTRUCTION
+
+        if policy == "whitelist" and allowed_langs:
+            allowed_names = ", ".join(
+                LANG_NAMES.get(lang, lang) for lang in allowed_langs
+            )
+            default_name = LANG_NAMES.get(lang_code, lang_code)
+            return (
+                f"Detect the language of the user's message and respond in that same language, "
+                f"but only if it is one of the following: {allowed_names}. "
+                f"If the user's language is not in this list, respond in {default_name} instead."
+            )
+
+        # fixed 정책: 항상 지정된 언어로 고정
         return LANG_INSTRUCTIONS.get(
             lang_code,
-            f"You must respond in the language with code '{lang_code}'. "
-            "If unsure, respond in the same language the user is using.",
+            f"You must respond in the language with code '{lang_code}'.",
         )
