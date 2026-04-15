@@ -1,10 +1,12 @@
 """문서 인제스트 파이프라인 — 파싱 → 청킹 → 임베딩 → 저장"""
 
+import hashlib
 import logging
 import os
 from pathlib import Path
 
-from sqlalchemy import update
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,32 @@ class IngestService:
         if not chunks_data:
             return
 
-        texts = [c["content"] for c in chunks_data]
+        # 중복 제거: 테넌트 내 이미 저장된 hash 조회
+        hashes = [
+            hashlib.sha256(c["content"].encode()).hexdigest() for c in chunks_data
+        ]
+        existing = await self._db.execute(
+            select(Chunk.content_hash).where(
+                Chunk.tenant_id == document.tenant_id,
+                Chunk.content_hash.in_(hashes),
+            )
+        )
+        existing_hashes = {row[0] for row in existing.fetchall()}
+
+        new_chunks_data = [
+            (data, h)
+            for data, h in zip(chunks_data, hashes)
+            if h not in existing_hashes
+        ]
+
+        skipped = len(chunks_data) - len(new_chunks_data)
+        if skipped:
+            logger.info("_save_chunks: %d 중복 청크 건너뜀 (tenant_id=%d)", skipped, document.tenant_id)
+
+        if not new_chunks_data:
+            return
+
+        texts = [data["content"] for data, _ in new_chunks_data]
         embeddings = await self._embedding_client.embed_batch(texts)
 
         chunks = [
@@ -90,13 +117,14 @@ class IngestService:
                 tenant_id=document.tenant_id,
                 document_id=document.id,
                 content=data["content"],
+                content_hash=h,
                 embedding=embedding,
                 chunk_index=data["index"],
                 chunk_metadata={
                     k: v for k, v in data.items() if k not in ("content", "index")
                 },
             )
-            for data, embedding in zip(chunks_data, embeddings)
+            for (data, h), embedding in zip(new_chunks_data, embeddings)
         ]
         self._db.add_all(chunks)
         await self._db.flush()
