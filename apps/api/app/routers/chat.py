@@ -18,6 +18,7 @@ from app.models.tenant import Tenant
 from app.services.domain_validation import is_origin_allowed
 from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.language import LanguageService
+from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import LLMClient, get_llm_client
 from app.services.rag import RAGService
 
@@ -105,6 +106,13 @@ async def chat(
         for m in reversed(history_result.scalars().all())
     ]
 
+    # LangSmith 로거 초기화 (키 없으면 no-op)
+    ls_logger = create_logger(tenant.langsmith_api_key)
+    ls_run_id = ls_logger.start_trace(
+        run_name="rag_chat",
+        inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
+    )
+
     # RAG 검색
     rag_service = RAGService(
         db=db,
@@ -116,6 +124,12 @@ async def chat(
         tenant_id=tenant.id,
         top_k=5,
     )
+    ls_logger.log_retrieval(
+        parent_run_id=ls_run_id,
+        query=body.message,
+        chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
+    )
+
     messages = rag_service.build_messages(
         query=body.message,
         retrieved_chunks=retrieved_chunks,
@@ -141,6 +155,8 @@ async def chat(
             sources=sources,
             conversation_id=conversation.id,
             session_id=session_id,
+            ls_logger=ls_logger,
+            ls_run_id=ls_run_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -157,6 +173,8 @@ async def _stream_response(
     sources: list[dict],
     conversation_id: int,
     session_id: str,
+    ls_logger: LangSmithLogger,
+    ls_run_id: str | None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -168,12 +186,18 @@ async def _stream_response(
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
     # 토큰 스트리밍
-    async for token in llm_client.chat_stream(messages):
-        full_response += token
-        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+    try:
+        async for token in llm_client.chat_stream(messages):
+            full_response += token
+            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+    except Exception as exc:
+        ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
+        raise
 
     # 완료 이벤트
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
+
+    ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     # 응답 저장 (백그라운드)
     await _save_assistant_message(conversation_id, full_response, sources)

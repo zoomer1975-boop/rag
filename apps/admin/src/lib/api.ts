@@ -81,6 +81,7 @@ export interface Tenant {
   widget_config: WidgetConfig;
   system_prompt: string | null;
   default_url_refresh_hours: number;
+  has_langsmith: boolean;
 }
 
 export interface WidgetConfig {

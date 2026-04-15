@@ -44,6 +44,8 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     widget_position: tenant.widget_config.position,
     quick_replies: (tenant.widget_config.quick_replies ?? []) as string[],
   });
+  const [langsmithKey, setLangsmithKey] = useState("");
+  const [langsmithKeyTouched, setLangsmithKeyTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -79,31 +81,37 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     e.preventDefault();
     setSaving(true);
     try {
+      const payload: Record<string, unknown> = {
+        name: form.name,
+        system_prompt: form.system_prompt || null,
+        lang_policy: form.lang_policy,
+        default_lang: form.default_lang,
+        allowed_langs: form.allowed_langs,
+        is_active: form.is_active,
+        default_url_refresh_hours: form.default_url_refresh_hours,
+        widget_config: {
+          primary_color: form.widget_primary_color,
+          greeting: form.widget_greeting,
+          title: form.widget_title,
+          placeholder: form.widget_placeholder,
+          position: form.widget_position,
+          quick_replies: form.quick_replies,
+          ...(tenant.widget_config.button_icon_url
+            ? { button_icon_url: tenant.widget_config.button_icon_url }
+            : {}),
+        },
+      };
+      if (langsmithKeyTouched) {
+        payload.langsmith_api_key = langsmithKey.trim() || null;
+      }
       const updated = await adminFetch<Tenant>(`/tenants/${tenant.id}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          name: form.name,
-          system_prompt: form.system_prompt || null,
-          lang_policy: form.lang_policy,
-          default_lang: form.default_lang,
-          allowed_langs: form.allowed_langs,
-          is_active: form.is_active,
-          default_url_refresh_hours: form.default_url_refresh_hours,
-          widget_config: {
-            primary_color: form.widget_primary_color,
-            greeting: form.widget_greeting,
-            title: form.widget_title,
-            placeholder: form.widget_placeholder,
-            position: form.widget_position,
-            quick_replies: form.quick_replies,
-            ...(tenant.widget_config.button_icon_url
-              ? { button_icon_url: tenant.widget_config.button_icon_url }
-              : {}),
-          },
-        }),
+        body: JSON.stringify(payload),
       });
       onUpdated(updated);
       setSaved(true);
+      setLangsmithKey("");
+      setLangsmithKeyTouched(false);
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
@@ -525,6 +533,31 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             추가
           </button>
         </div>
+      </fieldset>
+
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>옵저버빌리티</legend>
+        <Field
+          label="LangSmith API 키"
+          hint="설정하면 RAG 검색 및 LLM 호출이 LangSmith에 기록됩니다. 비워두고 저장하면 키가 삭제됩니다."
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+            <span style={{ fontSize: 12 }}>
+              현재 상태:{" "}
+              <strong style={{ color: tenant.has_langsmith ? "var(--color-primary, #0066ff)" : "var(--color-text-muted)" }}>
+                {tenant.has_langsmith ? "연결됨 ✓" : "미설정"}
+              </strong>
+            </span>
+          </div>
+          <input
+            className={styles.input}
+            type="password"
+            value={langsmithKey}
+            onChange={(e) => { setLangsmithKey(e.target.value); setLangsmithKeyTouched(true); }}
+            placeholder={tenant.has_langsmith ? "새 키 입력 (비워두면 기존 키 유지, 저장 시 삭제)" : "ls-..."}
+            autoComplete="new-password"
+          />
+        </Field>
       </fieldset>
 
       <div className={styles.footer}>

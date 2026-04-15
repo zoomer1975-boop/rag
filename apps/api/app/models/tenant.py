@@ -44,6 +44,9 @@ class Tenant(Base):
     # 시스템 프롬프트 (테넌트별 커스텀)
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # LangSmith 통합 (옵션)
+    langsmith_api_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # URL 자동 갱신 기본 주기 (시간, 0 = 비활성)
     default_url_refresh_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

@@ -30,6 +30,7 @@ from app.models.document import Document
 from app.models.tenant import Tenant
 from app.services.embeddings import get_embedding_client
 from app.services.language import LanguageService
+from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import get_llm_client
 from app.services.rag import RAGService
 
@@ -46,6 +47,7 @@ class TenantCreate(BaseModel):
     allowed_langs: str = "ko,en,ja,zh"
     allowed_domains: str = ""
     widget_config: dict = Field(default_factory=dict)
+    langsmith_api_key: str | None = None
 
 
 class TenantUpdate(BaseModel):
@@ -58,6 +60,7 @@ class TenantUpdate(BaseModel):
     widget_config: dict | None = None
     is_active: bool | None = None
     default_url_refresh_hours: int | None = Field(None, ge=0, le=8760)  # 0 = 비활성, 최대 1년
+    langsmith_api_key: str | None = None
 
 
 class TenantResponse(BaseModel):
@@ -72,8 +75,26 @@ class TenantResponse(BaseModel):
     widget_config: dict
     system_prompt: str | None
     default_url_refresh_hours: int
+    has_langsmith: bool = False  # 키 존재 여부만 노출 (키 자체는 숨김)
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_tenant(cls, tenant: "Tenant") -> "TenantResponse":
+        return cls(
+            id=tenant.id,
+            name=tenant.name,
+            api_key=tenant.api_key,
+            is_active=tenant.is_active,
+            lang_policy=tenant.lang_policy,
+            default_lang=tenant.default_lang,
+            allowed_langs=tenant.allowed_langs,
+            allowed_domains=tenant.allowed_domains,
+            widget_config=tenant.widget_config,
+            system_prompt=tenant.system_prompt,
+            default_url_refresh_hours=tenant.default_url_refresh_hours,
+            has_langsmith=bool(tenant.langsmith_api_key),
+        )
 
 
 @router.get("/", response_model=list[TenantResponse])
@@ -82,7 +103,7 @@ async def list_tenants(
     _: None = Depends(verify_admin),
 ):
     result = await db.execute(select(Tenant).order_by(Tenant.created_at.desc()))
-    return result.scalars().all()
+    return [TenantResponse.from_tenant(t) for t in result.scalars().all()]
 
 
 @router.post("/", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
@@ -109,11 +130,12 @@ async def create_tenant(
         allowed_langs=body.allowed_langs,
         allowed_domains=body.allowed_domains,
         widget_config=widget_config,
+        langsmith_api_key=body.langsmith_api_key,
     )
     db.add(tenant)
     await db.flush()
     await db.refresh(tenant)
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.get("/{tenant_id}", response_model=TenantResponse)
@@ -125,7 +147,7 @@ async def get_tenant(
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.patch("/{tenant_id}", response_model=TenantResponse)
@@ -160,7 +182,7 @@ async def update_tenant(
 
     await db.flush()
     await db.refresh(tenant)
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.post("/{tenant_id}/rotate-key", response_model=TenantResponse)
@@ -175,7 +197,7 @@ async def rotate_api_key(
     tenant.api_key = Tenant.generate_api_key()
     await db.flush()
     await db.refresh(tenant)
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -212,7 +234,7 @@ async def add_domain(
     if not _DOMAIN_RE.match(domain):
         raise HTTPException(status_code=400, detail="유효하지 않은 도메인 형식입니다.")
     if domain in domains:
-        return tenant  # already present — idempotent
+        return TenantResponse.from_tenant(tenant)  # already present — idempotent
     if len(domains) >= MAX_DOMAINS_PER_TENANT:
         raise HTTPException(status_code=400, detail=f"도메인은 최대 {MAX_DOMAINS_PER_TENANT}개까지 등록할 수 있습니다.")
 
@@ -221,7 +243,7 @@ async def add_domain(
     await db.flush()
     await db.refresh(tenant)
     await db.commit()
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.post("/{tenant_id}/icon", response_model=TenantResponse)
@@ -266,7 +288,7 @@ async def upload_icon(
     await db.flush()
     await db.refresh(tenant)
     await db.commit()
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.delete("/{tenant_id}/icon", response_model=TenantResponse)
@@ -292,7 +314,7 @@ async def delete_icon(
     await db.flush()
     await db.refresh(tenant)
     await db.commit()
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 @router.delete("/{tenant_id}/domains/{domain_index}", response_model=TenantResponse)
@@ -316,7 +338,7 @@ async def remove_domain(
     await db.flush()
     await db.refresh(tenant)
     await db.commit()
-    return tenant
+    return TenantResponse.from_tenant(tenant)
 
 
 # ─── 어드민 채팅 테스트 ───────────────────────────────────────────────────────
@@ -380,6 +402,12 @@ async def admin_chat_test(
         for m in reversed(history_result.scalars().all())
     ]
 
+    ls_logger = create_logger(tenant.langsmith_api_key)
+    ls_run_id = ls_logger.start_trace(
+        run_name="admin_rag_chat_test",
+        inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
+    )
+
     rag_service = RAGService(
         db=db,
         embedding_client=embedding_client,
@@ -390,6 +418,12 @@ async def admin_chat_test(
         tenant_id=tenant.id,
         top_k=5,
     )
+    ls_logger.log_retrieval(
+        parent_run_id=ls_run_id,
+        query=body.message,
+        chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
+    )
+
     messages = rag_service.build_messages(
         query=body.message,
         retrieved_chunks=retrieved_chunks,
@@ -414,6 +448,8 @@ async def admin_chat_test(
             sources=sources,
             conversation_id=conversation.id,
             session_id=session_id,
+            ls_logger=ls_logger,
+            ls_run_id=ls_run_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -430,6 +466,8 @@ async def _admin_chat_stream(
     sources: list[dict],
     conversation_id: int,
     session_id: str,
+    ls_logger: LangSmithLogger,
+    ls_run_id: str | None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -438,11 +476,17 @@ async def _admin_chat_stream(
     if sources:
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
-    async for token in llm_client.chat_stream(messages):
-        full_response += token
-        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+    try:
+        async for token in llm_client.chat_stream(messages):
+            full_response += token
+            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+    except Exception as exc:
+        ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
+        raise
 
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
+
+    ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     from app.db.session import AsyncSessionLocal
 
