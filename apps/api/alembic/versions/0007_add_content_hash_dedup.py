@@ -21,11 +21,11 @@ def upgrade() -> None:
         sa.Column("content_hash", sa.String(64), nullable=True),
     )
 
-    # 2. 기존 데이터에 hash 채우기
+    # 2. 기존 데이터에 hash 채우기 (convert_to로 UTF-8 bytea 변환)
     op.execute(
         """
         UPDATE chunks
-        SET content_hash = encode(sha256(content::bytea), 'hex')
+        SET content_hash = encode(sha256(convert_to(content, 'UTF8')), 'hex')
         """
     )
 
