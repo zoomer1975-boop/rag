@@ -44,7 +44,7 @@ class RAGService:
         """쿼리와 유사한 청크를 테넌트 격리 하에 검색합니다."""
         query_embedding = await self._embedding_client.embed(query)
         embedding_dim = len(query_embedding)
-        logger.debug("retrieve: tenant_id=%d, query=%r, embedding_dim=%d", tenant_id, query[:80], embedding_dim)
+        logger.info("retrieve: tenant_id=%d, embedding_dim=%d, query=%r", tenant_id, embedding_dim, query[:80])
 
         # pgvector cosine similarity 검색 (tenant_id 필터로 격리 보장)
         result = await self._db.execute(
