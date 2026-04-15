@@ -56,6 +56,9 @@ class LangSmithLogger:
             if parent_run_id is not None:
                 kwargs["parent_run_id"] = parent_run_id
             run = self._client.create_run(**kwargs)
+            if run is None or not hasattr(run, "id"):
+                logger.debug("LangSmith create_run returned no run object — tracing skipped")
+                return None
             return str(run.id)
         except Exception as exc:
             logger.warning("LangSmith start_trace 실패: %s", exc)
@@ -96,6 +99,8 @@ class LangSmithLogger:
                 inputs={"query": query},
                 parent_run_id=parent_run_id,
             )
+            if run is None or not hasattr(run, "id"):
+                return
             self._client.update_run(
                 run_id=str(run.id),
                 outputs={"documents": chunks},
