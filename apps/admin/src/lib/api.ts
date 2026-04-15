@@ -26,7 +26,9 @@ export async function apiFetch<T>(
 // 클라이언트는 /api/admin/... Next.js 프록시를 통해 FastAPI를 호출합니다.
 // ADMIN_API_TOKEN은 서버 사이드에서만 읽으므로 빌드 시점 이슈가 없습니다.
 
-const ADMIN_PROXY = "/api/admin";
+// basePath가 /rag/admin 이므로 Next.js API 라우트는 브라우저에서
+// /rag/admin/api/admin/... 경로로 접근해야 함
+const ADMIN_PROXY = "/rag/admin/api/admin";
 
 export async function adminFetch<T>(
   path: string,
