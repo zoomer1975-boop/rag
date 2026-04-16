@@ -82,19 +82,18 @@ class TestLangSmithLoggerEnabled:
         self.mock_client_cls.assert_called_once_with(api_key="ls__test_key_abc123")
 
     def test_start_trace_creates_run(self):
-        mock_run = MagicMock()
-        mock_run.id = "run-uuid-123"
-        self.mock_client.create_run.return_value = mock_run
-
         run_id = self.logger.start_trace(
             run_name="rag_chat",
             inputs={"query": "안녕하세요"},
         )
-        assert run_id == "run-uuid-123"
+        # UUID가 반환되어야 함
+        assert run_id is not None
+        assert len(run_id) == 36  # UUID 형식
         self.mock_client.create_run.assert_called_once()
         call_kwargs = self.mock_client.create_run.call_args[1]
         assert call_kwargs["name"] == "rag_chat"
         assert call_kwargs["inputs"] == {"query": "안녕하세요"}
+        assert call_kwargs["id"] == run_id
 
     def test_end_trace_updates_run(self):
         self.logger.end_trace(run_id="run-uuid-123", outputs={"response": "hello"})
@@ -133,21 +132,14 @@ class TestLangSmithLoggerEnabled:
         self.mock_client.create_run.assert_not_called()
 
     def test_context_manager_creates_and_ends_run(self):
-        mock_run = MagicMock()
-        mock_run.id = "ctx-run-id"
-        self.mock_client.create_run.return_value = mock_run
-
         with self.logger.trace("test_op", inputs={"q": "hello"}) as run_id:
-            assert run_id == "ctx-run-id"
+            assert run_id is not None
+            assert len(run_id) == 36  # UUID 형식
 
         self.mock_client.create_run.assert_called_once()
         self.mock_client.update_run.assert_called_once()
 
     def test_context_manager_ends_run_on_exception(self):
-        mock_run = MagicMock()
-        mock_run.id = "ctx-run-id"
-        self.mock_client.create_run.return_value = mock_run
-
         with pytest.raises(ValueError):
             with self.logger.trace("test_op", inputs={}) as run_id:
                 raise ValueError("test error")

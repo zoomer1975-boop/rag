@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Generator
 
 logger = logging.getLogger(__name__)
@@ -48,18 +50,18 @@ class LangSmithLogger:
         if not self.is_enabled:
             return None
         try:
+            run_id = str(uuid.uuid4())
             kwargs: dict[str, Any] = {
+                "id": run_id,
                 "name": run_name,
                 "run_type": run_type,
                 "inputs": inputs,
+                "start_time": datetime.now(timezone.utc),
             }
             if parent_run_id is not None:
                 kwargs["parent_run_id"] = parent_run_id
-            run = self._client.create_run(**kwargs)
-            if run is None or not hasattr(run, "id"):
-                logger.debug("LangSmith create_run returned no run object — tracing skipped")
-                return None
-            return str(run.id)
+            self._client.create_run(**kwargs)
+            return run_id
         except Exception as exc:
             logger.warning("LangSmith start_trace 실패: %s", exc)
             return None
@@ -74,7 +76,10 @@ class LangSmithLogger:
         if not self.is_enabled or run_id is None:
             return
         try:
-            kwargs: dict[str, Any] = {"run_id": run_id}
+            kwargs: dict[str, Any] = {
+                "run_id": run_id,
+                "end_time": datetime.now(timezone.utc),
+            }
             if outputs is not None:
                 kwargs["outputs"] = outputs
             if error is not None:
@@ -93,17 +98,19 @@ class LangSmithLogger:
         if not self.is_enabled or parent_run_id is None:
             return
         try:
-            run = self._client.create_run(
+            retrieval_run_id = str(uuid.uuid4())
+            self._client.create_run(
+                id=retrieval_run_id,
                 name="vector_retrieval",
                 run_type="retriever",
                 inputs={"query": query},
                 parent_run_id=parent_run_id,
+                start_time=datetime.now(timezone.utc),
             )
-            if run is None or not hasattr(run, "id"):
-                return
             self._client.update_run(
-                run_id=str(run.id),
+                run_id=retrieval_run_id,
                 outputs={"documents": chunks},
+                end_time=datetime.now(timezone.utc),
             )
         except Exception as exc:
             logger.warning("LangSmith log_retrieval 실패: %s", exc)
