@@ -182,3 +182,113 @@
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
+
+/* ── Detail top bar ─────────────────────────────────────── */
+
+.detailTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+/* ── List top bar ───────────────────────────────────────── */
+
+.listTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.listTopBar .heading {
+  margin-bottom: 0;
+}
+
+.bulkActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selectedCount {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* ── Download button ────────────────────────────────────── */
+
+.downloadBtn {
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.downloadBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.downloadBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.cancelBtn:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Checkbox column ────────────────────────────────────── */
+
+.checkboxCell {
+  width: 36px;
+  text-align: center;
+  padding: 8px 4px !important;
+}
+
+.checkboxCell input[type="checkbox"] {
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-accent);
+}
+
+.rowSelected {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.rowSelected:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent) !important;
+}
+
+/* ── Bulk error ─────────────────────────────────────────── */
+
+.bulkError {
+  font-size: 13px;
+  color: var(--color-danger, #e53e3e);
+  margin-bottom: 12px;
+}
