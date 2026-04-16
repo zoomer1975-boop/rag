@@ -453,6 +453,16 @@
     out = out.replace(/_([^_\n]+?)_/g, "<em>$1</em>");
     // Inline code: `code`
     out = out.replace(/`([^`]+?)`/g, "<code>$1</code>");
+    // Links: [text](url) — http/https only
+    out = out.replace(
+      /\[([^\]]+?)\]\((https?:\/\/[^)]+?)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">$1</a>'
+    );
+    // Bare URLs
+    out = out.replace(
+      /(?<![">])(https?:\/\/[^\s<"]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">$1</a>'
+    );
     // Line breaks
     out = out.replace(/\n/g, "<br>");
     return out;
