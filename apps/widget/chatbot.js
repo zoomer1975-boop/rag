@@ -403,9 +403,14 @@
   }
 
   // Fetch widget config from API on init
+  // Accept-Language를 전송하여 서버가 브라우저 언어에 맞는 greeting을 반환하도록 함
   const configUrl = API_URL.replace(/\/chat$/, "/chat/widget-config");
+  const browserLang = navigator.language || (navigator.languages && navigator.languages[0]) || "ko";
   fetch(configUrl, {
-    headers: { "X-API-Key": API_KEY },
+    headers: {
+      "X-API-Key": API_KEY,
+      "Accept-Language": browserLang,
+    },
   })
     .then((r) => r.ok ? r.json() : null)
     .then((data) => applyConfig(data))

@@ -21,6 +21,7 @@ from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import LLMClient, get_llm_client
 from app.services.rag import RAGService
+from app.services.widget_greeting import resolve_greeting
 
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -34,12 +35,37 @@ class ChatRequest(BaseModel):
 @router.get("/widget-config")
 async def widget_config(
     tenant: Tenant = Depends(get_tenant),
+    accept_language: str | None = Header(None, alias="Accept-Language"),
 ):
-    """위젯 설정 조회 — 위젯 초기화 시 호출"""
+    """위젯 설정 조회 — 위젯 초기화 시 호출.
+
+    Accept-Language 헤더로 브라우저 언어를 감지하여
+    greeting_i18n dict가 있으면 해당 언어의 인사말을 반환합니다.
+    """
+    lang_service = LanguageService(default_language=settings.default_language)
+    detected_lang = lang_service.parse_accept_language(accept_language)
+    resolved_lang = lang_service.resolve_lang(
+        detected=detected_lang,
+        policy=tenant.lang_policy,
+        default_lang=tenant.default_lang,
+        allowed_langs=tenant.allowed_lang_list,
+    )
+
+    # greeting_i18n dict가 있으면 다국어 greeting 선택, 없으면 greeting 그대로 사용
+    raw_greeting = tenant.widget_config.get(
+        "greeting_i18n",
+        tenant.widget_config.get("greeting", ""),
+    )
+    localized_greeting = resolve_greeting(
+        raw_greeting,
+        lang_code=resolved_lang,
+        default_lang=tenant.default_lang,
+    )
+
     config: dict = {
         "primary_color": tenant.widget_config.get("primary_color", "#0066ff"),
         "title": tenant.widget_config.get("title", "챗봇"),
-        "greeting": tenant.widget_config.get("greeting", ""),
+        "greeting": localized_greeting,
         "placeholder": tenant.widget_config.get("placeholder", "메시지를 입력하세요..."),
         "position": tenant.widget_config.get("position", "bottom-right"),
         "quick_replies": tenant.widget_config.get("quick_replies", []),
