@@ -15,13 +15,15 @@ from app.db.session import get_db
 from app.middleware.auth import get_tenant
 from app.models.conversation import Conversation, Message
 from app.models.tenant import Tenant
+import redis.asyncio as aioredis
+
 from app.services.domain_validation import is_origin_allowed
 from app.services.embeddings import EmbeddingClient, get_embedding_client
+from app.services.greeting_translator import GreetingTranslator
 from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import LLMClient, get_llm_client
 from app.services.rag import RAGService
-from app.services.widget_greeting import resolve_greeting
 
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -36,11 +38,12 @@ class ChatRequest(BaseModel):
 async def widget_config(
     tenant: Tenant = Depends(get_tenant),
     accept_language: str | None = Header(None, alias="Accept-Language"),
+    llm_client: LLMClient = Depends(get_llm_client),
 ):
     """위젯 설정 조회 — 위젯 초기화 시 호출.
 
-    Accept-Language 헤더로 브라우저 언어를 감지하여
-    greeting_i18n dict가 있으면 해당 언어의 인사말을 반환합니다.
+    Accept-Language로 브라우저 언어를 감지하여 greeting을 LLM으로 자동 번역합니다.
+    번역 결과는 Redis에 24시간 캐싱되어 LLM 호출은 최초 1회만 발생합니다.
     """
     lang_service = LanguageService(default_language=settings.default_language)
     detected_lang = lang_service.parse_accept_language(accept_language)
@@ -51,16 +54,22 @@ async def widget_config(
         allowed_langs=tenant.allowed_lang_list,
     )
 
-    # greeting_i18n dict가 있으면 다국어 greeting 선택, 없으면 greeting 그대로 사용
-    raw_greeting = tenant.widget_config.get(
-        "greeting_i18n",
-        tenant.widget_config.get("greeting", ""),
-    )
-    localized_greeting = resolve_greeting(
-        raw_greeting,
-        lang_code=resolved_lang,
-        default_lang=tenant.default_lang,
-    )
+    raw_greeting = tenant.widget_config.get("greeting", "")
+
+    # 원문 언어와 다를 때만 LLM 번역 (같으면 즉시 반환)
+    if raw_greeting and resolved_lang != tenant.default_lang:
+        try:
+            redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+            translator = GreetingTranslator(redis=redis, llm=llm_client)
+            localized_greeting = await translator.translate(
+                text=raw_greeting,
+                target_lang=resolved_lang,
+                source_lang=tenant.default_lang,
+            )
+        except Exception:
+            localized_greeting = raw_greeting
+    else:
+        localized_greeting = raw_greeting
 
     config: dict = {
         "primary_color": tenant.widget_config.get("primary_color", "#0066ff"),
