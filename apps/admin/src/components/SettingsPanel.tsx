@@ -375,6 +375,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
                   src={iconPreviewUrl}
                   alt="아이콘 미리보기"
                   style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", display: "block" }}
+                  onError={() => setIconMode("default")}
                 />
               ) : (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff">

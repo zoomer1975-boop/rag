@@ -366,7 +366,12 @@
     }
     if (config.button_icon_url) {
       const img = document.createElement("img");
-      img.src = config.button_icon_url;
+      // 상대 경로인 경우 API 서버 origin으로 절대 URL로 변환
+      // (위젯이 다른 도메인에 임베드될 때 올바른 서버를 가리키도록)
+      const iconUrl = config.button_icon_url.startsWith("http")
+        ? config.button_icon_url
+        : (() => { try { return new URL(API_URL).origin + config.button_icon_url; } catch { return config.button_icon_url; } })();
+      img.src = iconUrl;
       img.width = 56;
       img.height = 56;
       img.alt = "";
