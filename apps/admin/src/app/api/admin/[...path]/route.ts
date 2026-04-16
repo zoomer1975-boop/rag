@@ -12,10 +12,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 // Docker 내부 API 주소 (런타임 env, NEXT_PUBLIC_ 불필요)
+// nginx가 /rag 접두사를 제거하므로 Docker 내부 직접 호출 시 /api/v1만 사용
 const INTERNAL_API_BASE =
   process.env.INTERNAL_API_URL
-    ? `${process.env.INTERNAL_API_URL}/rag/api/v1`
-    : "http://api:8000/rag/api/v1";
+    ? `${process.env.INTERNAL_API_URL}/api/v1`
+    : "http://api:8000/api/v1";
 
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN ?? "";
 
