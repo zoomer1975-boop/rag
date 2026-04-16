@@ -3,6 +3,20 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   basePath: "/rag/admin",
   output: "standalone",
+  async rewrites() {
+    // nginx 없이 직접 배포 시 /rag/static/, /rag/widget/ 요청을 API 서버로 프록시
+    const apiBase = process.env.INTERNAL_API_URL ?? "http://api:8000";
+    return [
+      {
+        source: "/rag/static/:path*",
+        destination: `${apiBase}/rag/static/:path*`,
+      },
+      {
+        source: "/rag/widget/:path*",
+        destination: `${apiBase}/widget/:path*`,
+      },
+    ];
+  },
   transpilePackages: [
     "react-markdown",
     "remark",

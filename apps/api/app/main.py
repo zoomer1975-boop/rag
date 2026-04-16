@@ -70,6 +70,7 @@ async def serve_widget(filename: str):
 
 
 @app.get("/static/icons/{filename}")
+@app.get("/rag/static/icons/{filename}")  # nginx 없이 직접 접근 시 사용
 async def serve_icon(filename: str):
     # path traversal 방지
     if "/" in filename or "\\" in filename or filename.startswith("."):
