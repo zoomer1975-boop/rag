@@ -36,7 +36,7 @@ async def widget_config(
     tenant: Tenant = Depends(get_tenant),
 ):
     """위젯 설정 조회 — 위젯 초기화 시 호출"""
-    return {
+    config: dict = {
         "primary_color": tenant.widget_config.get("primary_color", "#0066ff"),
         "title": tenant.widget_config.get("title", "챗봇"),
         "greeting": tenant.widget_config.get("greeting", ""),
@@ -44,6 +44,9 @@ async def widget_config(
         "position": tenant.widget_config.get("position", "bottom-right"),
         "quick_replies": tenant.widget_config.get("quick_replies", []),
     }
+    if icon_url := tenant.widget_config.get("button_icon_url"):
+        config["button_icon_url"] = icon_url
+    return config
 
 
 @router.post("")

@@ -62,6 +62,13 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(
     tenant.widget_config.button_icon_url ?? null
   );
+
+  // tenant prop이 외부에서 갱신될 때 아이콘 상태 동기화
+  useEffect(() => {
+    const url = tenant.widget_config.button_icon_url ?? null;
+    setIconPreviewUrl(url);
+    if (url) setIconMode("custom");
+  }, [tenant.widget_config.button_icon_url]);
   const [iconUploading, setIconUploading] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);

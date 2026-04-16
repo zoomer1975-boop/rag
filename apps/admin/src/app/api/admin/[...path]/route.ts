@@ -56,11 +56,25 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<NextResp
 
   try {
     const upstream = await fetch(targetUrl, init);
+    const upstreamContentType = upstream.headers.get("content-type") ?? "application/json";
+
+    // SSE 스트리밍 응답은 버퍼링 없이 그대로 전달
+    if (upstreamContentType.includes("text/event-stream")) {
+      return new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
+
     const body = await upstream.arrayBuffer();
     return new NextResponse(body, {
       status: upstream.status,
       headers: {
-        "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+        "Content-Type": upstreamContentType,
       },
     });
   } catch (err) {

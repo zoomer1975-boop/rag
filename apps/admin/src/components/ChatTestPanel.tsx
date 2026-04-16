@@ -16,7 +16,7 @@ interface Props {
   tenant: Tenant;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/rag/api/v1";
+const ADMIN_PROXY = "/rag/admin/api/admin";
 
 export default function ChatTestPanel({ tenant }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -51,7 +51,7 @@ export default function ChatTestPanel({ tenant }: Props) {
 
     try {
       const res = await fetch(
-        `${API_BASE}/tenants/${tenant.id}/chat-test`,
+        `${ADMIN_PROXY}/tenants/${tenant.id}/chat-test`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
