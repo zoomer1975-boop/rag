@@ -115,6 +115,54 @@ class LangSmithLogger:
         except Exception as exc:
             logger.warning("LangSmith log_retrieval 실패: %s", exc)
 
+    def log_llm_start(
+        self,
+        parent_run_id: str | None,
+        messages: list[dict[str, Any]],
+    ) -> str | None:
+        """LLM 호출을 llm child run으로 기록하고 run_id를 반환합니다.
+
+        messages 배열에는 system prompt, 대화 히스토리, 사용자 메시지가 포함되어
+        LangSmith에서 전체 프롬프트를 확인할 수 있습니다.
+        """
+        if not self.is_enabled or parent_run_id is None:
+            return None
+        try:
+            llm_run_id = str(uuid.uuid4())
+            self._client.create_run(
+                id=llm_run_id,
+                name="llm_call",
+                run_type="llm",
+                inputs={"messages": messages},
+                parent_run_id=parent_run_id,
+                start_time=datetime.now(timezone.utc),
+            )
+            return llm_run_id
+        except Exception as exc:
+            logger.warning("LangSmith log_llm_start 실패: %s", exc)
+            return None
+
+    def log_llm_end(
+        self,
+        run_id: str | None,
+        response: str,
+        error: str | None = None,
+    ) -> None:
+        """LLM 응답을 기록하고 llm child run을 종료합니다."""
+        if not self.is_enabled or run_id is None:
+            return
+        try:
+            kwargs: dict[str, Any] = {
+                "run_id": run_id,
+                "end_time": datetime.now(timezone.utc),
+                "outputs": {"response": response},
+            }
+            if error is not None:
+                kwargs["error"] = error
+            self._client.update_run(**kwargs)
+        except Exception as exc:
+            logger.warning("LangSmith log_llm_end 실패: %s", exc)
+
     @contextmanager
     def trace(
         self,

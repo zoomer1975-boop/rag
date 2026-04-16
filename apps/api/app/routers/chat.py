@@ -153,6 +153,8 @@ async def chat(
     db.add(user_msg)
     await db.commit()
 
+    ls_llm_run_id = ls_logger.log_llm_start(parent_run_id=ls_run_id, messages=messages)
+
     return StreamingResponse(
         _stream_response(
             llm_client=llm_client,
@@ -162,6 +164,7 @@ async def chat(
             session_id=session_id,
             ls_logger=ls_logger,
             ls_run_id=ls_run_id,
+            ls_llm_run_id=ls_llm_run_id,
         ),
         media_type="text/event-stream",
         headers={
@@ -180,6 +183,7 @@ async def _stream_response(
     session_id: str,
     ls_logger: LangSmithLogger,
     ls_run_id: str | None,
+    ls_llm_run_id: str | None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -196,12 +200,14 @@ async def _stream_response(
             full_response += token
             yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
     except Exception as exc:
+        ls_logger.log_llm_end(run_id=ls_llm_run_id, response="", error=str(exc))
         ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
         raise
 
     # 완료 이벤트
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
 
+    ls_logger.log_llm_end(run_id=ls_llm_run_id, response=full_response)
     ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     # 응답 저장 (백그라운드)

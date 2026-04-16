@@ -131,6 +131,44 @@ class TestLangSmithLoggerEnabled:
         )
         self.mock_client.create_run.assert_not_called()
 
+    def test_log_llm_start_creates_llm_child_run(self):
+        """log_llm_start는 'llm' 타입 child run을 생성하고 run_id를 반환한다."""
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant.\n\nContext: ..."},
+            {"role": "user", "content": "안녕하세요"},
+        ]
+        llm_run_id = self.logger.log_llm_start(
+            parent_run_id="parent-run-id",
+            messages=messages,
+        )
+        assert llm_run_id is not None
+        assert len(llm_run_id) == 36  # UUID
+        self.mock_client.create_run.assert_called_once()
+        call_kwargs = self.mock_client.create_run.call_args[1]
+        assert call_kwargs["run_type"] == "llm"
+        assert call_kwargs["parent_run_id"] == "parent-run-id"
+        assert call_kwargs["inputs"]["messages"] == messages
+
+    def test_log_llm_start_none_parent_skips_call(self):
+        """parent_run_id가 None이면 llm 로깅 건너뜀."""
+        result = self.logger.log_llm_start(parent_run_id=None, messages=[])
+        assert result is None
+        self.mock_client.create_run.assert_not_called()
+
+    def test_log_llm_end_updates_run_with_response(self):
+        """log_llm_end는 LLM 응답을 outputs에 기록하고 run을 종료한다."""
+        self.logger.log_llm_end(run_id="llm-run-id", response="안녕하세요!")
+        self.mock_client.update_run.assert_called_once()
+        call_kwargs = self.mock_client.update_run.call_args[1]
+        assert call_kwargs["run_id"] == "llm-run-id"
+        assert call_kwargs["outputs"]["response"] == "안녕하세요!"
+        assert "end_time" in call_kwargs
+
+    def test_log_llm_end_none_run_id_is_noop(self):
+        """run_id가 None이면 update_run 호출 없음."""
+        self.logger.log_llm_end(run_id=None, response="hi")
+        self.mock_client.update_run.assert_not_called()
+
     def test_context_manager_creates_and_ends_run(self):
         with self.logger.trace("test_op", inputs={"q": "hello"}) as run_id:
             assert run_id is not None
