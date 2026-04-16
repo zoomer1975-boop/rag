@@ -101,6 +101,7 @@ class RAGService:
         lang_code: str,
         policy: str = "fixed",
         allowed_langs: list[str] | None = None,
+        has_tools: bool = False,
     ) -> list[dict[str, str]]:
         """LLM에 전달할 메시지 목록을 조립합니다."""
         lang_instruction = self._language_service.build_lang_instruction(
@@ -125,6 +126,14 @@ class RAGService:
         # 테넌트 커스텀 시스템 프롬프트 추가
         if tenant.system_prompt:
             system_prompt = f"{tenant.system_prompt}\n\n{system_prompt}"
+
+        # tool 사용 가능 안내
+        if has_tools:
+            system_prompt += (
+                "\n\nYou have access to external API tools. "
+                "Use them when the user's question requires real-time or dynamic information "
+                "not found in the context above."
+            )
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 

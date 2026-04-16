@@ -1,6 +1,7 @@
 """Chat API — SSE 스트리밍, 다국어, 대화 히스토리"""
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -15,6 +16,7 @@ from app.db.session import get_db
 from app.middleware.auth import get_tenant
 from app.models.conversation import Conversation, Message
 from app.models.tenant import Tenant
+from app.models.tenant_api_tool import TenantApiTool
 import redis.asyncio as aioredis
 
 from app.services.domain_validation import is_origin_allowed
@@ -22,8 +24,11 @@ from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.greeting_translator import GreetingTranslator
 from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
-from app.services.llm import LLMClient, get_llm_client
+from app.services.llm import LLMClient, TextResult, ToolCallResult, get_llm_client
 from app.services.rag import RAGService
+from app.services.tool_executor import MAX_TOOL_CALLS_PER_CHAT, build_openai_tools, execute_tool
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -151,6 +156,16 @@ async def chat(
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
     )
 
+    # 활성 API Tools 조회
+    tools_result = await db.execute(
+        select(TenantApiTool).where(
+            TenantApiTool.tenant_id == tenant.id,
+            TenantApiTool.is_active == True,  # noqa: E712
+        )
+    )
+    active_tools = tools_result.scalars().all()
+    openai_tools = build_openai_tools(list(active_tools))
+
     # RAG 검색
     rag_service = RAGService(
         db=db,
@@ -176,6 +191,7 @@ async def chat(
         lang_code=resolved_lang,
         policy=tenant.lang_policy,
         allowed_langs=tenant.allowed_lang_list,
+        has_tools=bool(openai_tools),
     )
     sources = rag_service.build_sources(retrieved_chunks)
 
@@ -190,6 +206,9 @@ async def chat(
 
     ls_llm_run_id = ls_logger.log_llm_start(parent_run_id=ls_run_id, messages=messages)
 
+    # tool_name -> TenantApiTool 매핑 (실행 시 빠른 조회)
+    tool_map = {t.name: t for t in active_tools}
+
     return StreamingResponse(
         _stream_response(
             llm_client=llm_client,
@@ -200,6 +219,8 @@ async def chat(
             ls_logger=ls_logger,
             ls_run_id=ls_run_id,
             ls_llm_run_id=ls_llm_run_id,
+            openai_tools=openai_tools,
+            tool_map=tool_map,
         ),
         media_type="text/event-stream",
         headers={
@@ -219,6 +240,8 @@ async def _stream_response(
     ls_logger: LangSmithLogger,
     ls_run_id: str | None,
     ls_llm_run_id: str | None,
+    openai_tools: list[dict] | None = None,
+    tool_map: dict[str, TenantApiTool] | None = None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -229,11 +252,73 @@ async def _stream_response(
     if sources:
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
-    # 토큰 스트리밍
     try:
-        async for token in llm_client.chat_stream(messages):
-            full_response += token
-            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        # tool이 있으면 tool calling 루프 실행
+        if openai_tools:
+            call_count = 0
+            current_messages = list(messages)
+
+            while call_count < MAX_TOOL_CALLS_PER_CHAT:
+                result = await llm_client.chat_with_tools(
+                    messages=current_messages,
+                    tools=openai_tools,
+                )
+
+                if isinstance(result, TextResult):
+                    # tool 없이 바로 텍스트 응답 → 스트리밍 없이 전체 전송
+                    full_response = result.content
+                    yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+                    break
+
+                # ToolCallResult — tool 실행
+                current_messages.append(result.assistant_message)
+
+                for tc in result.tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        arguments = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                    # tool_call 이벤트 전송
+                    yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name, 'arguments': arguments})}\n\n"
+
+                    tool_instance = tool_map.get(tool_name)
+                    if not tool_instance:
+                        tool_result_content = f"[Error] Unknown tool: {tool_name}"
+                        yield f"data: {json.dumps({'type': 'tool_error', 'name': tool_name, 'error': 'Unknown tool'})}\n\n"
+                    else:
+                        try:
+                            tool_result_content = await execute_tool(tool_instance, arguments)
+                            preview = tool_result_content[:200]
+                            yield f"data: {json.dumps({'type': 'tool_result', 'name': tool_name, 'success': True, 'preview': preview})}\n\n"
+                        except Exception as e:
+                            tool_result_content = f"[Error] {e}"
+                            logger.warning("tool '%s' 실행 실패: %s", tool_name, e)
+                            yield f"data: {json.dumps({'type': 'tool_error', 'name': tool_name, 'error': str(e)})}\n\n"
+
+                    # tool 결과를 messages에 추가
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_result_content,
+                    })
+
+                call_count += 1
+
+            else:
+                # 최대 횟수 초과 — tool 없이 최종 응답 요청
+                logger.warning("tool calling 최대 횟수(%d) 초과, 강제 종료", MAX_TOOL_CALLS_PER_CHAT)
+                final = await llm_client.chat(messages=current_messages)
+                full_response = final
+                yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+
+        else:
+            # tool 없는 테넌트 — 기존 스트리밍 흐름 유지
+            async for token in llm_client.chat_stream(messages):
+                full_response += token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
     except Exception as exc:
         ls_logger.log_llm_end(run_id=ls_llm_run_id, response="", error=str(exc))
         ls_logger.end_trace(run_id=ls_run_id, error=str(exc))

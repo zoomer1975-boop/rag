@@ -59,6 +59,7 @@ class Tenant(Base):
 
     documents: Mapped[list["Document"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")  # noqa: F821
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")  # noqa: F821
+    api_tools: Mapped[list["TenantApiTool"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")  # noqa: F821
 
     @staticmethod
     def generate_api_key() -> str:
