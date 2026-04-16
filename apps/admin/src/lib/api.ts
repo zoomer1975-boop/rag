@@ -129,6 +129,21 @@ export interface Message {
   created_at: string;
 }
 
+export interface ApiTool {
+  id: number;
+  tenant_id: number;
+  name: string;
+  description: string;
+  http_method: string;
+  url_template: string;
+  headers_masked: Record<string, string> | null;
+  query_params_schema: Record<string, unknown> | null;
+  body_schema: Record<string, unknown> | null;
+  response_jmespath: string | null;
+  timeout_seconds: number;
+  is_active: boolean;
+}
+
 export interface SubAdmin {
   id: number;
   name: string;
