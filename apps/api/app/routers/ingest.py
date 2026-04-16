@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.middleware.auth import get_tenant
 from app.models.document import Document
 from app.models.tenant import Tenant
+from app.services.document_search import build_document_search_filter
 from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.ingest import IngestService
 
@@ -125,12 +126,17 @@ async def ingest_file(
 async def list_documents(
     tenant: Tenant = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
+    q: str | None = Query(None, description="문서명 또는 URL 검색어"),
 ):
-    result = await db.execute(
+    stmt = (
         select(Document)
         .where(Document.tenant_id == tenant.id)
         .order_by(Document.created_at.desc())
     )
+    search_filter = build_document_search_filter(Document, q)
+    if search_filter is not None:
+        stmt = stmt.where(search_filter)
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 

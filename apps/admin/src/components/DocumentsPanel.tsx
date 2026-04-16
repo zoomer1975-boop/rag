@@ -39,6 +39,7 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
   const [urlInput, setUrlInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -50,6 +51,16 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
       setLoading(false);
     }
   }
+
+  const filteredDocs = searchQuery.trim()
+    ? docs.filter((doc) => {
+        const q = searchQuery.trim().toLowerCase();
+        return (
+          doc.title.toLowerCase().includes(q) ||
+          (doc.source_url ?? "").toLowerCase().includes(q)
+        );
+      })
+    : docs;
 
   useEffect(() => { load(); }, [apiKey]);
 
@@ -148,15 +159,34 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
       <section className={styles.section}>
         <div className={styles.listHeader}>
           <h3 className={styles.subHeading}>문서 목록</h3>
-          <button className={styles.btnGhost} onClick={load}>새로고침</button>
+          <div className={styles.searchWrapper}>
+            <span className={styles.searchIcon}>🔍</span>
+            <input
+              className={styles.searchInput}
+              type="search"
+              placeholder="문서명 또는 URL 검색…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {searchQuery.trim() && (
+              <span className={styles.searchCount}>
+                {filteredDocs.length} / {docs.length}건
+              </span>
+            )}
+            <button className={styles.btnGhost} onClick={load}>새로고침</button>
+          </div>
         </div>
         {loading ? (
           <p className={styles.muted}>불러오는 중…</p>
+        ) : filteredDocs.length === 0 && searchQuery.trim() ? (
+          <p className={styles.muted}>"{searchQuery.trim()}"에 해당하는 문서가 없습니다.</p>
         ) : docs.length === 0 ? (
           <p className={styles.muted}>문서가 없습니다.</p>
         ) : (
           <ul className={styles.docList}>
-            {docs.map((doc) => {
+            {filteredDocs.map((doc) => {
               const st = STATUS_LABELS[doc.status] ?? { label: doc.status, color: "#ccc" };
               const typeBadge = SOURCE_TYPE_LABELS[doc.source_type] ?? { label: doc.source_type.toUpperCase(), color: "#6b7280" };
               const isUrl = doc.source_type === "url";

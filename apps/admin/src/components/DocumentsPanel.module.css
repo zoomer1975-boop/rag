@@ -55,6 +55,54 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.searchWrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  font-size: 14px;
+}
+
+.searchInput {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 6px 12px 6px 32px;
+  width: 100%;
+  outline: none;
+  font-size: 13px;
+  transition: border-color 0.15s;
+}
+
+.searchInput:focus {
+  border-color: var(--color-accent);
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.searchCount {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 .docList {
