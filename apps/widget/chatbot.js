@@ -453,6 +453,11 @@
     out = out.replace(/_([^_\n]+?)_/g, "<em>$1</em>");
     // Inline code: `code`
     out = out.replace(/`([^`]+?)`/g, "<code>$1</code>");
+    // Images: ![alt](url) — http/https only — must come BEFORE link pattern
+    out = out.replace(
+      /!\[([^\]]*?)\]\((https?:\/\/[^)]+?)\)/g,
+      '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0;display:block;">'
+    );
     // Links: [text](url) — http/https only
     out = out.replace(
       /\[([^\]]+?)\]\((https?:\/\/[^)]+?)\)/g,
