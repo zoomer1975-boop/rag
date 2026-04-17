@@ -1,6 +1,7 @@
 """LLM 클라이언트 — OpenAI-compatible API 추상화"""
 
 import logging
+import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
@@ -12,6 +13,22 @@ from app.config import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# Gemma4 vLLM thinking 블록 패턴: <|channel>thought\n...\n<channel|>
+_THINKING_RE = re.compile(r"<\|channel>thought.*?<channel\|>\s*", re.DOTALL)
+
+# thinking 블록 시작 마커 (스트리밍 감지용)
+_THINKING_START = "<|channel>"
+_THINKING_END = "<channel|>"
+
+
+def strip_thinking_tokens(text: str) -> str:
+    """Gemma4 vLLM thinking 블록을 제거한다.
+
+    <|channel>thought ... <channel|> 형식의 블록을 제거하고
+    실제 응답 텍스트만 반환한다.
+    """
+    return _THINKING_RE.sub("", text).lstrip("\n")
 
 
 @dataclass
@@ -48,7 +65,8 @@ class LLMClient:
             temperature=temperature if temperature is not None else settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content or ""
+        return strip_thinking_tokens(content)
 
     async def chat_with_tools(
         self,
@@ -131,7 +149,7 @@ class LLMClient:
             }
             return ToolCallResult(tool_calls=msg.tool_calls, assistant_message=assistant_message)
 
-        return TextResult(content=msg.content or "")
+        return TextResult(content=strip_thinking_tokens(msg.content or ""))
 
     async def chat_stream(
         self,
@@ -140,7 +158,11 @@ class LLMClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> AsyncGenerator[str, None]:
-        """스트리밍 채팅 완성 — 토큰 단위로 yield"""
+        """스트리밍 채팅 완성 — 토큰 단위로 yield.
+
+        Gemma4 vLLM의 thinking 블록(<|channel>thought...<channel|>)을
+        감지해 사용자에게 노출하지 않는다.
+        """
         stream = await self._client.chat.completions.create(
             model=model or settings.llm_model,
             messages=messages,
@@ -148,10 +170,48 @@ class LLMClient:
             max_tokens=max_tokens or settings.llm_max_tokens,
             stream=True,
         )
+
+        # thinking 블록이 스트림 앞부분에 나타나면 버퍼에 모아 두었다가
+        # <channel|> 이후부터 yield한다.
+        buf = ""
+        in_thinking = False
+        thinking_done = False
+
         async for chunk in stream:
             delta = chunk.choices[0].delta.content
-            if delta:
+            if not delta:
+                continue
+
+            if thinking_done:
+                # thinking 제거 완료 — 이후 토큰은 바로 yield
                 yield delta
+                continue
+
+            buf += delta
+
+            if not in_thinking:
+                if _THINKING_START in buf:
+                    in_thinking = True
+                else:
+                    # thinking 마커가 보이지 않으면 버퍼를 flush하고 직접 yield
+                    # (단, 마커가 토큰 경계에 걸칠 수 있으므로 마커 길이만큼 보유)
+                    safe_len = len(buf) - len(_THINKING_START)
+                    if safe_len > 0:
+                        yield buf[:safe_len]
+                        buf = buf[safe_len:]
+
+            if in_thinking and _THINKING_END in buf:
+                # thinking 블록 끝 감지 — 이후 텍스트만 추출
+                after = buf[buf.index(_THINKING_END) + len(_THINKING_END):]
+                after = after.lstrip("\n")
+                thinking_done = True
+                buf = ""
+                if after:
+                    yield after
+
+        # 스트림 종료 시 버퍼에 남은 내용 처리
+        if buf and not in_thinking:
+            yield buf
 
 
 def get_llm_client() -> LLMClient:
