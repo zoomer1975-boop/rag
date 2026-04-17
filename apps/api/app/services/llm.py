@@ -73,7 +73,7 @@ class LLMClient:
         choice = response.choices[0]
         msg = choice.message
 
-        if choice.finish_reason == "tool_calls" and msg.tool_calls:
+        if msg.tool_calls:  # finish_reason이 "stop"인 provider도 있으므로 tool_calls 우선 확인
             # tool_calls를 messages에 추가할 수 있는 dict 형태로 변환
             assistant_message: dict[str, Any] = {
                 "role": "assistant",
