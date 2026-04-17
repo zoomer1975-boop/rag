@@ -114,11 +114,6 @@ class TestToolCallingLoop:
 
         llm_client.chat_with_tools = AsyncMock(side_effect=[tool_call_result, text_result])
 
-        # TextResult 후 chat_stream으로 최종 응답을 스트리밍
-        async def _fake_stream(messages):
-            yield "서울의 현재 기온은 25°C입니다."
-        llm_client.chat_stream = _fake_stream
-
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
         fake_tool.is_active = True
@@ -152,21 +147,17 @@ class TestToolCallingLoop:
 
     @pytest.mark.asyncio
     async def test_tool_text_result_streams_tokens(self):
-        """tool path에서 TextResult를 받으면 단일 토큰이 아닌 chat_stream으로 스트리밍해야 한다."""
+        """tool path에서 TextResult를 받으면 LLM 재호출 없이 content를 단어 단위로 스트리밍해야 한다."""
         from app.routers.chat import _stream_response
         from app.services.langsmith_logger import LangSmithLogger
 
         llm_client = MagicMock()
         tool_call_result = _make_tool_call_result("get_weather", {"city": "Seoul"})
-        text_result = TextResult(content="서울의 현재 기온은 25°C입니다.")
+        # TextResult에 3단어 포함 → 최소 2개 이상의 token 이벤트 예상
+        text_result = TextResult(content="서울의 현재 기온은")
         llm_client.chat_with_tools = AsyncMock(side_effect=[tool_call_result, text_result])
-
-        # chat_stream은 여러 토큰을 순차적으로 yield해야 함
-        async def _fake_stream(messages):
-            yield "서울의 "
-            yield "현재 기온은 "
-            yield "25°C입니다."
-        llm_client.chat_stream = _fake_stream
+        # chat_stream은 호출되지 않아야 함 (LLM 재호출 없이 fake streaming)
+        llm_client.chat_stream = AsyncMock(side_effect=AssertionError("chat_stream이 호출되면 안 됩니다"))
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
@@ -193,15 +184,22 @@ class TestToolCallingLoop:
                     events.append(event)
 
         token_events = [json.loads(e[len("data: "):]) for e in events if '"token"' in e]
-        # chat_stream이 3개 토큰을 yield하므로 token 이벤트가 3개여야 함 (단일 bulk가 아님)
-        assert len(token_events) == 3, (
+        # "서울의 현재 기온은" → 3단어 → 3개의 token 이벤트
+        assert len(token_events) >= 2, (
             f"tool TextResult 경로에서 token 이벤트가 {len(token_events)}개입니다. "
-            "chat_stream을 사용해 여러 토큰으로 스트리밍해야 합니다."
+            "content를 단어 단위로 나눠 스트리밍해야 합니다."
         )
+        # 전체 내용이 누락 없이 전달됐는지 검증
+        full_text = "".join(e["content"] for e in token_events)
+        assert "서울의" in full_text and "기온은" in full_text
 
     @pytest.mark.asyncio
-    async def test_max_tool_calls_uses_chat_stream(self):
-        """tool 호출이 MAX_TOOL_CALLS_PER_CHAT 횟수를 초과하면 chat() 대신 chat_stream()으로 스트리밍한다."""
+    async def test_max_tool_calls_uses_chat_for_final_response(self):
+        """tool 호출이 MAX_TOOL_CALLS_PER_CHAT 횟수를 초과하면 chat()으로 최종 응답을 받는다.
+
+        tool history가 있는 current_messages를 chat_stream에 tools 없이 보내면
+        vLLM/Ollama가 오류를 낼 수 있으므로 안정적인 chat()을 사용한다.
+        """
         from app.routers.chat import _stream_response
         from app.services.langsmith_logger import LangSmithLogger
 
@@ -209,13 +207,9 @@ class TestToolCallingLoop:
         llm_client.chat_with_tools = AsyncMock(
             return_value=_make_tool_call_result("get_weather", {"city": "Seoul"})
         )
-        # chat()은 호출되지 않아야 함
         llm_client.chat = AsyncMock(return_value="강제 종료 응답")
-
-        async def _fake_stream(messages):
-            yield "강제 "
-            yield "종료 응답"
-        llm_client.chat_stream = _fake_stream
+        # chat_stream은 호출되지 않아야 함
+        llm_client.chat_stream = AsyncMock(side_effect=AssertionError("max 초과 시 chat_stream 호출 금지"))
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
@@ -242,12 +236,7 @@ class TestToolCallingLoop:
                     events.append(event)
 
         assert llm_client.chat_with_tools.call_count == MAX_TOOL_CALLS_PER_CHAT
-        # chat()은 사용하지 않아야 함 — chat_stream()으로 대체됨
-        assert llm_client.chat.call_count == 0, (
-            "max tool calls 초과 시 chat()이 아닌 chat_stream()을 사용해야 합니다."
-        )
-        token_events = [e for e in events if '"token"' in e]
-        assert len(token_events) == 2, "chat_stream이 2개 토큰을 yield해야 합니다."
+        assert llm_client.chat.call_count == 1, "max 초과 시 chat()으로 최종 응답을 받아야 합니다."
 
     @pytest.mark.asyncio
     async def test_max_tool_calls_enforced(self):
@@ -260,10 +249,6 @@ class TestToolCallingLoop:
             return_value=_make_tool_call_result("get_weather", {"city": "Seoul"})
         )
         llm_client.chat = AsyncMock(return_value="강제 종료 응답")
-
-        async def _fake_stream(messages):
-            yield "강제 종료 응답"
-        llm_client.chat_stream = _fake_stream
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"

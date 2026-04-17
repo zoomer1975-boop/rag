@@ -273,10 +273,13 @@ async def _stream_response(
                 )
 
                 if isinstance(result, TextResult):
-                    # tool 없이 바로 텍스트 응답 → chat_stream으로 스트리밍
-                    async for token in llm_client.chat_stream(current_messages):
-                        full_response += token
-                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                    # LLM이 이미 최종 답변을 생성했으므로 재호출 없이 단어 단위 fake 스트리밍
+                    # (chat_stream에 tools 없이 tool history를 보내면 vLLM/Ollama 오류 발생)
+                    words = result.content.split(" ")
+                    for i, word in enumerate(words):
+                        chunk = word + (" " if i < len(words) - 1 else "")
+                        full_response += chunk
+                        yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
                     break
 
                 # ToolCallResult — tool 실행
@@ -316,11 +319,11 @@ async def _stream_response(
                 call_count += 1
 
             else:
-                # 최대 횟수 초과 — tool 없이 최종 응답 스트리밍
+                # 최대 횟수 초과 — tool history가 있는 messages를 tools 없이 chat_stream에
+                # 보내면 vLLM/Ollama 오류 발생하므로 안정적인 chat()으로 최종 응답 요청
                 logger.warning("tool calling 최대 횟수(%d) 초과, 강제 종료", MAX_TOOL_CALLS_PER_CHAT)
-                async for token in llm_client.chat_stream(current_messages):
-                    full_response += token
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                full_response = await llm_client.chat(messages=current_messages)
+                yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
 
         else:
             # tool 없는 테넌트 — 기존 스트리밍 흐름 유지
