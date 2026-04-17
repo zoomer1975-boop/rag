@@ -127,12 +127,16 @@ class RAGService:
         if tenant.system_prompt:
             system_prompt = f"{tenant.system_prompt}\n\n{system_prompt}"
 
-        # tool 사용 가능 안내
+        # tool 사용 강제 안내
         if has_tools:
             system_prompt += (
-                "\n\nYou have access to external API tools. "
-                "Use them when the user's question requires real-time or dynamic information "
-                "not found in the context above."
+                "\n\n## Tool Use Instructions (MANDATORY)\n"
+                "You have access to external API tools listed below.\n"
+                "IMPORTANT RULES:\n"
+                "1. If the user's question cannot be answered from the context above, "
+                "you MUST call the appropriate tool — do NOT say you don't have the information.\n"
+                "2. Call the tool first, then answer based on the tool's response.\n"
+                "3. Never refuse to call a tool when it is relevant to the user's question."
             )
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]

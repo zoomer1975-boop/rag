@@ -88,6 +88,19 @@ class LLMClient:
             bool(msg.tool_calls),
             (msg.content or "")[:120],
         )
+        # vLLM 진단: tool call이 content 텍스트 안에 숨어있는지 확인
+        if not msg.tool_calls and msg.content and (
+            "<tool_call>" in msg.content
+            or "```json" in msg.content
+            or '"name"' in msg.content
+            or "function_call" in msg.content
+        ):
+            logger.warning(
+                "[tool_calling] SUSPECTED_TEXT_TOOL_CALL — vLLM may need "
+                "--enable-auto-tool-choice --tool-call-parser <parser>. "
+                "content=%r",
+                msg.content[:300],
+            )
 
         if msg.tool_calls:  # finish_reason이 "stop"인 provider도 있으므로 tool_calls 우선 확인
             logger.info(
