@@ -20,7 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 # 비밀번호 해싱 컨텍스트 (argon2, bcrypt fallback)
-pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="bcrypt")
 
 # 중간 테이블: sub_admin_tenants
 sub_admin_tenants = Table(
@@ -49,7 +49,7 @@ class SubAdmin(Base):
 
     @staticmethod
     def hash_password(plain_password: str) -> str:
-        """평문 비밀번호를 bcrypt로 해싱합니다."""
+        """평문 비밀번호를 argon2로 해싱합니다."""
         return pwd_context.hash(plain_password)
 
     def verify_password(self, plain_password: str) -> bool:

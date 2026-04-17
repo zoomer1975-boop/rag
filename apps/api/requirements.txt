@@ -35,6 +35,7 @@ tiktoken==0.7.0
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+argon2-cffi==23.1.0
 
 # Scheduler
 apscheduler==3.10.4
