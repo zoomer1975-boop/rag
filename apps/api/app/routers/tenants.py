@@ -402,7 +402,7 @@ async def admin_chat_test(
         for m in reversed(history_result.scalars().all())
     ]
 
-    ls_logger = create_logger(tenant.langsmith_api_key)
+    ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
     ls_run_id = ls_logger.start_trace(
         run_name="admin_rag_chat_test",
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},

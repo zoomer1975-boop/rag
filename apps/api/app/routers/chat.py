@@ -150,7 +150,7 @@ async def chat(
     ]
 
     # LangSmith 로거 초기화 (키 없으면 no-op)
-    ls_logger = create_logger(tenant.langsmith_api_key)
+    ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
     ls_run_id = ls_logger.start_trace(
         run_name="rag_chat",
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},

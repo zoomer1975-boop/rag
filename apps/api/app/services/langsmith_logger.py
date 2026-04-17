@@ -27,8 +27,9 @@ class LangSmithLogger:
     SDK 오류가 발생해도 예외를 전파하지 않아 주요 기능에 영향을 주지 않습니다.
     """
 
-    def __init__(self, api_key: str | None) -> None:
+    def __init__(self, api_key: str | None, project_name: str | None = None) -> None:
         self._client: Any = None
+        self._project_name = project_name
         if api_key and Client is not None:
             try:
                 self._client = Client(api_key=api_key)
@@ -60,6 +61,8 @@ class LangSmithLogger:
             }
             if parent_run_id is not None:
                 kwargs["parent_run_id"] = parent_run_id
+            elif self._project_name is not None:
+                kwargs["project_name"] = self._project_name
             self._client.create_run(**kwargs)
             return run_id
         except Exception as exc:
@@ -185,6 +188,6 @@ class LangSmithLogger:
             raise
 
 
-def create_logger(api_key: str | None) -> LangSmithLogger:
+def create_logger(api_key: str | None, project_name: str | None = None) -> LangSmithLogger:
     """테넌트 api_key로부터 LangSmithLogger 인스턴스를 생성합니다."""
-    return LangSmithLogger(api_key=api_key)
+    return LangSmithLogger(api_key=api_key, project_name=project_name)
