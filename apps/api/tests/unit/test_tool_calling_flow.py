@@ -279,3 +279,73 @@ class TestChatWithTools:
 
         call_kwargs = create_mock.call_args[1]
         assert "tool_choice" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_chat_with_tools_uses_temperature_zero_by_default(self):
+        """chat_with_tools는 Gemma4 호환을 위해 기본 temperature=0을 사용해야 한다."""
+        from app.services.llm import LLMClient
+
+        msg = MagicMock()
+        msg.tool_calls = None
+        msg.content = "응답"
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = msg
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        with patch("app.services.llm.AsyncOpenAI") as mock_cls:
+            mock_openai = MagicMock()
+            mock_cls.return_value = mock_openai
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_openai.chat.completions.create = create_mock
+
+            client = LLMClient()
+            await client.chat_with_tools(
+                messages=[{"role": "user", "content": "test"}],
+                tools=[{"type": "function", "function": {"name": "search"}}],
+            )
+
+        call_kwargs = create_mock.call_args[1]
+        assert call_kwargs["temperature"] == 0.0, (
+            f"chat_with_tools는 temperature=0이어야 하는데 {call_kwargs['temperature']}가 사용됨 "
+            "(Gemma4 tool calling은 temperature=0 필수)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_temperature_zero_not_overridden_by_settings(self):
+        """temperature=0.0을 명시적으로 전달하면 settings 기본값(0.7)으로 덮어쓰이지 않아야 한다."""
+        from app.services.llm import LLMClient
+
+        msg = MagicMock()
+        msg.tool_calls = None
+        msg.content = "응답"
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = msg
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        with patch("app.services.llm.AsyncOpenAI") as mock_cls:
+            mock_openai = MagicMock()
+            mock_cls.return_value = mock_openai
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_openai.chat.completions.create = create_mock
+
+            client = LLMClient()
+            # temperature=0.0은 falsy이므로 `0.0 or default`에서 default가 선택되는 버그 검증
+            await client.chat_with_tools(
+                messages=[{"role": "user", "content": "test"}],
+                tools=[{"type": "function", "function": {"name": "search"}}],
+                temperature=0.0,
+            )
+
+        call_kwargs = create_mock.call_args[1]
+        assert call_kwargs["temperature"] == 0.0, (
+            f"temperature=0.0이 {call_kwargs['temperature']}로 덮어쓰임 "
+            "(0.0 or default 패턴 버그)"
+        )

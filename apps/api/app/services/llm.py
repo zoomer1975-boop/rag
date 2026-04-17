@@ -45,7 +45,7 @@ class LLMClient:
         response = await self._client.chat.completions.create(
             model=model or settings.llm_model,
             messages=messages,
-            temperature=temperature or settings.llm_temperature,
+            temperature=temperature if temperature is not None else settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
         return response.choices[0].message.content or ""
@@ -60,23 +60,29 @@ class LLMClient:
     ) -> ToolCallResult | TextResult:
         """Tool calling 지원 채팅 완성 (non-streaming).
 
+        Gemma4 등 vLLM 모델은 tool calling 시 temperature=0이 필수.
+        temperature를 명시하지 않으면 0.0을 사용한다.
+
         Returns:
             ToolCallResult: LLM이 tool 호출을 요청한 경우
             TextResult: LLM이 텍스트로 바로 응답한 경우
         """
         _model = model or settings.llm_model
+        # temperature=0.0은 falsy이므로 `or` 대신 `is not None` 체크
+        _temperature = temperature if temperature is not None else 0.0
         logger.info(
-            "[tool_calling] REQUEST model=%s tools=%d tool_names=%s",
+            "[tool_calling] REQUEST model=%s tools=%d tool_names=%s temperature=%s",
             _model,
             len(tools),
             [t["function"]["name"] for t in tools if t.get("function")],
+            _temperature,
         )
 
         response = await self._client.chat.completions.create(
             model=_model,
             messages=messages,
             tools=tools,
-            temperature=temperature or settings.llm_temperature,
+            temperature=_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
         choice = response.choices[0]
@@ -138,7 +144,7 @@ class LLMClient:
         stream = await self._client.chat.completions.create(
             model=model or settings.llm_model,
             messages=messages,
-            temperature=temperature or settings.llm_temperature,
+            temperature=temperature if temperature is not None else settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
             stream=True,
         )
