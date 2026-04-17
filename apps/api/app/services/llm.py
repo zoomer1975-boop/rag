@@ -66,7 +66,6 @@ class LLMClient:
             model=model or settings.llm_model,
             messages=messages,
             tools=tools,
-            tool_choice="auto",
             temperature=temperature or settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )

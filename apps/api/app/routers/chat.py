@@ -151,7 +151,7 @@ async def chat(
 
     # LangSmith 로거 초기화 (키 없으면 no-op)
     ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
-    ls_run_id = ls_logger.start_trace(
+    ls_run_id = await ls_logger.start_trace(
         run_name="rag_chat",
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
     )
@@ -177,7 +177,7 @@ async def chat(
         tenant_id=tenant.id,
         top_k=5,
     )
-    ls_logger.log_retrieval(
+    await ls_logger.log_retrieval(
         parent_run_id=ls_run_id,
         query=body.message,
         chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
@@ -204,7 +204,7 @@ async def chat(
     db.add(user_msg)
     await db.commit()
 
-    ls_llm_run_id = ls_logger.log_llm_start(parent_run_id=ls_run_id, messages=messages)
+    ls_llm_run_id = await ls_logger.log_llm_start(parent_run_id=ls_run_id, messages=messages)
 
     # tool_name -> TenantApiTool 매핑 (실행 시 빠른 조회)
     tool_map = {t.name: t for t in active_tools}
@@ -320,15 +320,15 @@ async def _stream_response(
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
     except Exception as exc:
-        ls_logger.log_llm_end(run_id=ls_llm_run_id, response="", error=str(exc))
-        ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
+        await ls_logger.log_llm_end(run_id=ls_llm_run_id, response="", error=str(exc))
+        await ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
         raise
 
     # 완료 이벤트
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
 
-    ls_logger.log_llm_end(run_id=ls_llm_run_id, response=full_response)
-    ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
+    await ls_logger.log_llm_end(run_id=ls_llm_run_id, response=full_response)
+    await ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     # 응답 저장 (백그라운드)
     await _save_assistant_message(conversation_id, full_response, sources)

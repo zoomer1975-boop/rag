@@ -61,8 +61,8 @@ class TestToolCallingLoop:
         llm_client.chat_stream = _fake_stream
 
         ls_logger = MagicMock(spec=LangSmithLogger)
-        ls_logger.log_llm_end = MagicMock()
-        ls_logger.end_trace = MagicMock()
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
 
         events = []
         with patch("app.routers.chat._save_assistant_message", new_callable=AsyncMock):
@@ -102,8 +102,8 @@ class TestToolCallingLoop:
         fake_tool.is_active = True
 
         ls_logger = MagicMock(spec=LangSmithLogger)
-        ls_logger.log_llm_end = MagicMock()
-        ls_logger.end_trace = MagicMock()
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
 
         events = []
         with patch("app.routers.chat.execute_tool", new_callable=AsyncMock, return_value="[HTTP 200]\n{\"temp\": 25}"):
@@ -145,8 +145,8 @@ class TestToolCallingLoop:
         fake_tool.name = "get_weather"
 
         ls_logger = MagicMock(spec=LangSmithLogger)
-        ls_logger.log_llm_end = MagicMock()
-        ls_logger.end_trace = MagicMock()
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
 
         with patch("app.routers.chat.execute_tool", new_callable=AsyncMock, return_value="[HTTP 200]\nok"):
             with patch("app.routers.chat._save_assistant_message", new_callable=AsyncMock):
@@ -183,8 +183,8 @@ class TestToolCallingLoop:
         ])
 
         ls_logger = MagicMock(spec=LangSmithLogger)
-        ls_logger.log_llm_end = MagicMock()
-        ls_logger.end_trace = MagicMock()
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
 
         # tool_map에 "other_tool"은 있지만 LLM이 호출한 "unknown_tool"은 없음
         other_tool = MagicMock()
@@ -208,3 +208,74 @@ class TestToolCallingLoop:
 
         event_types = [json.loads(e[len("data: "):])["type"] for e in events]
         assert "tool_error" in event_types
+
+
+class TestChatWithTools:
+    """LLMClient.chat_with_tools 동작 단위 검증"""
+
+    @pytest.mark.asyncio
+    async def test_tool_calls_detected_when_finish_reason_is_stop(self):
+        """finish_reason이 'stop'이어도 msg.tool_calls가 있으면 ToolCallResult를 반환해야 함."""
+        from app.services.llm import LLMClient
+
+        tc = MagicMock()
+        tc.id = "call_abc"
+        tc.function.name = "search"
+        tc.function.arguments = '{"query": "test"}'
+
+        msg = MagicMock()
+        msg.tool_calls = [tc]
+        msg.content = None
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"  # Ollama 등이 "stop"으로 반환하는 케이스
+        choice.message = msg
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        with patch("app.services.llm.AsyncOpenAI") as mock_cls:
+            mock_openai = MagicMock()
+            mock_cls.return_value = mock_openai
+            mock_openai.chat.completions.create = AsyncMock(return_value=mock_response)
+
+            client = LLMClient()
+            result = await client.chat_with_tools(
+                messages=[{"role": "user", "content": "test"}],
+                tools=[{"type": "function", "function": {"name": "search"}}],
+            )
+
+        from app.services.llm import ToolCallResult
+        assert isinstance(result, ToolCallResult)
+        assert result.tool_calls[0].function.name == "search"
+
+    @pytest.mark.asyncio
+    async def test_chat_with_tools_does_not_pass_tool_choice_param(self):
+        """chat_with_tools가 tool_choice를 명시하지 않아 모든 Ollama 모델과 호환되어야 함."""
+        from app.services.llm import LLMClient
+
+        msg = MagicMock()
+        msg.tool_calls = None
+        msg.content = "직접 응답"
+
+        choice = MagicMock()
+        choice.finish_reason = "stop"
+        choice.message = msg
+
+        mock_response = MagicMock()
+        mock_response.choices = [choice]
+
+        with patch("app.services.llm.AsyncOpenAI") as mock_cls:
+            mock_openai = MagicMock()
+            mock_cls.return_value = mock_openai
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_openai.chat.completions.create = create_mock
+
+            client = LLMClient()
+            await client.chat_with_tools(
+                messages=[{"role": "user", "content": "test"}],
+                tools=[{"type": "function", "function": {"name": "search"}}],
+            )
+
+        call_kwargs = create_mock.call_args[1]
+        assert "tool_choice" not in call_kwargs
