@@ -23,7 +23,9 @@ interface AuthLoginResponse {
 export async function POST(req: Request) {
   const adminUsername = process.env.ADMIN_USERNAME;
   const adminPassword = process.env.ADMIN_PASSWORD;
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "/rag/api/v1";
+  const apiBaseUrl = process.env.INTERNAL_API_URL
+    ? `${process.env.INTERNAL_API_URL}/api/v1`
+    : "http://api:8000/api/v1";
 
   if (!adminUsername || !adminPassword) {
     return NextResponse.json(
