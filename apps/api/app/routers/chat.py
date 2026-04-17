@@ -265,6 +265,7 @@ async def _stream_response(
         if openai_tools:
             call_count = 0
             current_messages = list(messages)
+            any_tool_called = False
 
             while call_count < MAX_TOOL_CALLS_PER_CHAT:
                 result = await llm_client.chat_with_tools(
@@ -273,16 +274,23 @@ async def _stream_response(
                 )
 
                 if isinstance(result, TextResult):
-                    # LLM이 이미 최종 답변을 생성했으므로 재호출 없이 단어 단위 fake 스트리밍
-                    # (chat_stream에 tools 없이 tool history를 보내면 vLLM/Ollama 오류 발생)
-                    words = result.content.split(" ")
-                    for i, word in enumerate(words):
-                        chunk = word + (" " if i < len(words) - 1 else "")
-                        full_response += chunk
-                        yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                    if any_tool_called:
+                        # 케이스 B: tool history 있음 → chat_stream에 tools 없이 보내면 vLLM 오류
+                        # 이미 계산된 content를 단어 단위 fake 스트리밍
+                        words = result.content.split(" ")
+                        for i, word in enumerate(words):
+                            chunk = word + (" " if i < len(words) - 1 else "")
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                    else:
+                        # 케이스 A: tool history 없음 → chat_stream으로 실제 스트리밍 가능
+                        async for token in llm_client.chat_stream(current_messages):
+                            full_response += token
+                            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
                     break
 
                 # ToolCallResult — tool 실행
+                any_tool_called = True
                 current_messages.append(result.assistant_message)
 
                 for tc in result.tool_calls:

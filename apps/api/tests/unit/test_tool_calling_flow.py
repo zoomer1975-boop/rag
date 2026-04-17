@@ -146,18 +146,63 @@ class TestToolCallingLoop:
         assert "done" in event_types
 
     @pytest.mark.asyncio
-    async def test_tool_text_result_streams_tokens(self):
-        """tool path에서 TextResult를 받으면 LLM 재호출 없이 content를 단어 단위로 스트리밍해야 한다."""
+    async def test_tool_no_tool_called_uses_chat_stream(self):
+        """케이스 A: tool-enabled 테넌트에서 LLM이 tool 없이 바로 TextResult를 반환하면
+        tool history가 없으므로 chat_stream으로 실제 스트리밍해야 한다."""
+        from app.routers.chat import _stream_response
+        from app.services.langsmith_logger import LangSmithLogger
+
+        llm_client = MagicMock()
+        # 첫 번째 호출에서 바로 TextResult (tool 미사용)
+        text_result = TextResult(content="안녕하세요")
+        llm_client.chat_with_tools = AsyncMock(return_value=text_result)
+
+        # chat_stream이 호출되어야 함 (tool history 없으므로 실제 스트리밍 가능)
+        async def _fake_stream(messages):
+            yield "안녕"
+            yield "하세요"
+        llm_client.chat_stream = _fake_stream
+
+        ls_logger = MagicMock(spec=LangSmithLogger)
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
+
+        events = []
+        with patch("app.routers.chat._save_assistant_message", new_callable=AsyncMock):
+            async for event in _stream_response(
+                llm_client=llm_client,
+                messages=[{"role": "user", "content": "안녕"}],
+                sources=[],
+                conversation_id=1,
+                session_id="s1",
+                ls_logger=ls_logger,
+                ls_run_id=None,
+                ls_llm_run_id=None,
+                openai_tools=[{"type": "function", "function": {"name": "get_weather"}}],
+                tool_map={},
+            ):
+                events.append(event)
+
+        token_events = [json.loads(e[len("data: "):]) for e in events if '"token"' in e]
+        # chat_stream이 2개 토큰을 yield → 2개 token 이벤트
+        assert len(token_events) == 2, (
+            f"tool 미사용 시 chat_stream을 통해 실제 스트리밍해야 하는데 "
+            f"token 이벤트가 {len(token_events)}개입니다."
+        )
+
+    @pytest.mark.asyncio
+    async def test_tool_text_result_after_tool_call_uses_fake_streaming(self):
+        """케이스 B: tool 호출 후 최종 TextResult는 tool history가 있으므로
+        chat_stream 재호출 없이 content를 단어 단위 fake 스트리밍해야 한다."""
         from app.routers.chat import _stream_response
         from app.services.langsmith_logger import LangSmithLogger
 
         llm_client = MagicMock()
         tool_call_result = _make_tool_call_result("get_weather", {"city": "Seoul"})
-        # TextResult에 3단어 포함 → 최소 2개 이상의 token 이벤트 예상
         text_result = TextResult(content="서울의 현재 기온은")
         llm_client.chat_with_tools = AsyncMock(side_effect=[tool_call_result, text_result])
-        # chat_stream은 호출되지 않아야 함 (LLM 재호출 없이 fake streaming)
-        llm_client.chat_stream = AsyncMock(side_effect=AssertionError("chat_stream이 호출되면 안 됩니다"))
+        # tool history 있음 → chat_stream 호출 금지
+        llm_client.chat_stream = AsyncMock(side_effect=AssertionError("tool history 있을 때 chat_stream 호출 금지"))
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
@@ -184,12 +229,9 @@ class TestToolCallingLoop:
                     events.append(event)
 
         token_events = [json.loads(e[len("data: "):]) for e in events if '"token"' in e]
-        # "서울의 현재 기온은" → 3단어 → 3개의 token 이벤트
         assert len(token_events) >= 2, (
-            f"tool TextResult 경로에서 token 이벤트가 {len(token_events)}개입니다. "
-            "content를 단어 단위로 나눠 스트리밍해야 합니다."
+            f"content를 단어 단위로 나눠 스트리밍해야 하는데 token 이벤트가 {len(token_events)}개입니다."
         )
-        # 전체 내용이 누락 없이 전달됐는지 검증
         full_text = "".join(e["content"] for e in token_events)
         assert "서울의" in full_text and "기온은" in full_text
 
