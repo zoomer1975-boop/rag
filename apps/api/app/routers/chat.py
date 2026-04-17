@@ -165,6 +165,13 @@ async def chat(
     )
     active_tools = tools_result.scalars().all()
     openai_tools = build_openai_tools(list(active_tools))
+    logger.info(
+        "[tool_calling] tenant_id=%d active_tools=%d openai_tools=%d names=%s",
+        tenant.id,
+        len(active_tools),
+        len(openai_tools),
+        [t["function"]["name"] for t in openai_tools],
+    )
 
     # RAG 검색
     rag_service = RAGService(

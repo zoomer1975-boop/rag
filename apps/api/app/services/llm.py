@@ -1,5 +1,6 @@
 """LLM 클라이언트 — OpenAI-compatible API 추상화"""
 
+import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +11,7 @@ from openai.types.chat import ChatCompletionMessageToolCall
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,8 +64,16 @@ class LLMClient:
             ToolCallResult: LLM이 tool 호출을 요청한 경우
             TextResult: LLM이 텍스트로 바로 응답한 경우
         """
+        _model = model or settings.llm_model
+        logger.info(
+            "[tool_calling] REQUEST model=%s tools=%d tool_names=%s",
+            _model,
+            len(tools),
+            [t["function"]["name"] for t in tools if t.get("function")],
+        )
+
         response = await self._client.chat.completions.create(
-            model=model or settings.llm_model,
+            model=_model,
             messages=messages,
             tools=tools,
             temperature=temperature or settings.llm_temperature,
@@ -72,7 +82,18 @@ class LLMClient:
         choice = response.choices[0]
         msg = choice.message
 
+        logger.info(
+            "[tool_calling] RESPONSE finish_reason=%r has_tool_calls=%s content_preview=%r",
+            choice.finish_reason,
+            bool(msg.tool_calls),
+            (msg.content or "")[:120],
+        )
+
         if msg.tool_calls:  # finish_reason이 "stop"인 provider도 있으므로 tool_calls 우선 확인
+            logger.info(
+                "[tool_calling] TOOL_CALLS_DETECTED calls=%s",
+                [{"name": tc.function.name, "args": tc.function.arguments[:80]} for tc in msg.tool_calls],
+            )
             # tool_calls를 messages에 추가할 수 있는 dict 형태로 변환
             assistant_message: dict[str, Any] = {
                 "role": "assistant",
