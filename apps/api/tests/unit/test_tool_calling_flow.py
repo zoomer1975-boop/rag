@@ -45,6 +45,23 @@ class TestBuildOpenaiTools:
         assert result[0]["function"]["name"] == "my_tool"
 
 
+class TestStreamingHeaders:
+    """SSE 응답 헤더 검증"""
+
+    def test_x_accel_buffering_header_present(self):
+        """StreamingResponse에 X-Accel-Buffering: no 헤더가 있어야 nginx 버퍼링이 비활성화된다."""
+        import inspect
+        import ast
+        import textwrap
+        from pathlib import Path
+
+        source = Path("app/routers/chat.py").read_text(encoding="utf-8")
+        assert "X-Accel-Buffering" in source, (
+            "chat.py StreamingResponse headers에 'X-Accel-Buffering: no'가 없습니다. "
+            "nginx proxy_buffering 설정만으로는 부족하며, 응답 헤더에도 명시해야 합니다."
+        )
+
+
 class TestToolCallingLoop:
     """_stream_response의 tool calling 루프 동작 검증"""
 
@@ -87,7 +104,7 @@ class TestToolCallingLoop:
 
     @pytest.mark.asyncio
     async def test_tool_call_executes_and_continues(self):
-        """LLM이 tool_call을 반환하면 tool을 실행하고 최종 텍스트 응답을 반환한다."""
+        """LLM이 tool_call을 반환하면 tool을 실행하고 최종 텍스트 응답을 스트리밍한다."""
         from app.routers.chat import _stream_response
         from app.services.langsmith_logger import LangSmithLogger
 
@@ -96,6 +113,11 @@ class TestToolCallingLoop:
         text_result = TextResult(content="서울의 현재 기온은 25°C입니다.")
 
         llm_client.chat_with_tools = AsyncMock(side_effect=[tool_call_result, text_result])
+
+        # TextResult 후 chat_stream으로 최종 응답을 스트리밍
+        async def _fake_stream(messages):
+            yield "서울의 현재 기온은 25°C입니다."
+        llm_client.chat_stream = _fake_stream
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
@@ -129,17 +151,71 @@ class TestToolCallingLoop:
         assert "done" in event_types
 
     @pytest.mark.asyncio
-    async def test_max_tool_calls_enforced(self):
-        """tool 호출이 MAX_TOOL_CALLS_PER_CHAT 횟수를 초과하면 강제 종료한다."""
+    async def test_tool_text_result_streams_tokens(self):
+        """tool path에서 TextResult를 받으면 단일 토큰이 아닌 chat_stream으로 스트리밍해야 한다."""
         from app.routers.chat import _stream_response
         from app.services.langsmith_logger import LangSmithLogger
 
         llm_client = MagicMock()
-        # 항상 tool_call만 반환하도록 설정
+        tool_call_result = _make_tool_call_result("get_weather", {"city": "Seoul"})
+        text_result = TextResult(content="서울의 현재 기온은 25°C입니다.")
+        llm_client.chat_with_tools = AsyncMock(side_effect=[tool_call_result, text_result])
+
+        # chat_stream은 여러 토큰을 순차적으로 yield해야 함
+        async def _fake_stream(messages):
+            yield "서울의 "
+            yield "현재 기온은 "
+            yield "25°C입니다."
+        llm_client.chat_stream = _fake_stream
+
+        fake_tool = MagicMock()
+        fake_tool.name = "get_weather"
+
+        ls_logger = MagicMock(spec=LangSmithLogger)
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
+
+        events = []
+        with patch("app.routers.chat.execute_tool", new_callable=AsyncMock, return_value="[HTTP 200]\n{\"temp\": 25}"):
+            with patch("app.routers.chat._save_assistant_message", new_callable=AsyncMock):
+                async for event in _stream_response(
+                    llm_client=llm_client,
+                    messages=[{"role": "user", "content": "서울 날씨"}],
+                    sources=[],
+                    conversation_id=1,
+                    session_id="s1",
+                    ls_logger=ls_logger,
+                    ls_run_id=None,
+                    ls_llm_run_id=None,
+                    openai_tools=[{"type": "function", "function": {"name": "get_weather"}}],
+                    tool_map={"get_weather": fake_tool},
+                ):
+                    events.append(event)
+
+        token_events = [json.loads(e[len("data: "):]) for e in events if '"token"' in e]
+        # chat_stream이 3개 토큰을 yield하므로 token 이벤트가 3개여야 함 (단일 bulk가 아님)
+        assert len(token_events) == 3, (
+            f"tool TextResult 경로에서 token 이벤트가 {len(token_events)}개입니다. "
+            "chat_stream을 사용해 여러 토큰으로 스트리밍해야 합니다."
+        )
+
+    @pytest.mark.asyncio
+    async def test_max_tool_calls_uses_chat_stream(self):
+        """tool 호출이 MAX_TOOL_CALLS_PER_CHAT 횟수를 초과하면 chat() 대신 chat_stream()으로 스트리밍한다."""
+        from app.routers.chat import _stream_response
+        from app.services.langsmith_logger import LangSmithLogger
+
+        llm_client = MagicMock()
         llm_client.chat_with_tools = AsyncMock(
             return_value=_make_tool_call_result("get_weather", {"city": "Seoul"})
         )
+        # chat()은 호출되지 않아야 함
         llm_client.chat = AsyncMock(return_value="강제 종료 응답")
+
+        async def _fake_stream(messages):
+            yield "강제 "
+            yield "종료 응답"
+        llm_client.chat_stream = _fake_stream
 
         fake_tool = MagicMock()
         fake_tool.name = "get_weather"
@@ -165,10 +241,55 @@ class TestToolCallingLoop:
                 ):
                     events.append(event)
 
-        # chat_with_tools 호출 횟수가 MAX_TOOL_CALLS_PER_CHAT와 같아야 함
         assert llm_client.chat_with_tools.call_count == MAX_TOOL_CALLS_PER_CHAT
-        # 강제 종료 후 chat()으로 최종 응답 요청
-        assert llm_client.chat.call_count == 1
+        # chat()은 사용하지 않아야 함 — chat_stream()으로 대체됨
+        assert llm_client.chat.call_count == 0, (
+            "max tool calls 초과 시 chat()이 아닌 chat_stream()을 사용해야 합니다."
+        )
+        token_events = [e for e in events if '"token"' in e]
+        assert len(token_events) == 2, "chat_stream이 2개 토큰을 yield해야 합니다."
+
+    @pytest.mark.asyncio
+    async def test_max_tool_calls_enforced(self):
+        """tool 호출이 MAX_TOOL_CALLS_PER_CHAT 횟수를 초과하면 강제 종료한다."""
+        from app.routers.chat import _stream_response
+        from app.services.langsmith_logger import LangSmithLogger
+
+        llm_client = MagicMock()
+        llm_client.chat_with_tools = AsyncMock(
+            return_value=_make_tool_call_result("get_weather", {"city": "Seoul"})
+        )
+        llm_client.chat = AsyncMock(return_value="강제 종료 응답")
+
+        async def _fake_stream(messages):
+            yield "강제 종료 응답"
+        llm_client.chat_stream = _fake_stream
+
+        fake_tool = MagicMock()
+        fake_tool.name = "get_weather"
+
+        ls_logger = MagicMock(spec=LangSmithLogger)
+        ls_logger.log_llm_end = AsyncMock()
+        ls_logger.end_trace = AsyncMock()
+
+        with patch("app.routers.chat.execute_tool", new_callable=AsyncMock, return_value="[HTTP 200]\nok"):
+            with patch("app.routers.chat._save_assistant_message", new_callable=AsyncMock):
+                events = []
+                async for event in _stream_response(
+                    llm_client=llm_client,
+                    messages=[{"role": "user", "content": "날씨"}],
+                    sources=[],
+                    conversation_id=1,
+                    session_id="s1",
+                    ls_logger=ls_logger,
+                    ls_run_id=None,
+                    ls_llm_run_id=None,
+                    openai_tools=[{"type": "function"}],
+                    tool_map={"get_weather": fake_tool},
+                ):
+                    events.append(event)
+
+        assert llm_client.chat_with_tools.call_count == MAX_TOOL_CALLS_PER_CHAT
 
     @pytest.mark.asyncio
     async def test_unknown_tool_sends_error_event(self):

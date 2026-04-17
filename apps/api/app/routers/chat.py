@@ -232,6 +232,7 @@ async def chat(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             "X-Session-Id": session_id,
             "X-Language": resolved_lang,
         },
@@ -272,9 +273,10 @@ async def _stream_response(
                 )
 
                 if isinstance(result, TextResult):
-                    # tool 없이 바로 텍스트 응답 → 스트리밍 없이 전체 전송
-                    full_response = result.content
-                    yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+                    # tool 없이 바로 텍스트 응답 → chat_stream으로 스트리밍
+                    async for token in llm_client.chat_stream(current_messages):
+                        full_response += token
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
                     break
 
                 # ToolCallResult — tool 실행
@@ -314,11 +316,11 @@ async def _stream_response(
                 call_count += 1
 
             else:
-                # 최대 횟수 초과 — tool 없이 최종 응답 요청
+                # 최대 횟수 초과 — tool 없이 최종 응답 스트리밍
                 logger.warning("tool calling 최대 횟수(%d) 초과, 강제 종료", MAX_TOOL_CALLS_PER_CHAT)
-                final = await llm_client.chat(messages=current_messages)
-                full_response = final
-                yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+                async for token in llm_client.chat_stream(current_messages):
+                    full_response += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
         else:
             # tool 없는 테넌트 — 기존 스트리밍 흐름 유지
