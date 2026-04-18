@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.routers import admin, analytics, api_tools, auth, chat, ingest, tenants
+from app.routers import admin, analytics, api_tools, auth, boilerplate, chat, ingest, tenants
 from app.scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
@@ -57,6 +57,7 @@ app.include_router(api_tools.router)
 app.include_router(ingest.router)
 app.include_router(chat.router)
 app.include_router(analytics.router)
+app.include_router(boilerplate.router)
 
 
 @app.get("/widget/{filename}")

@@ -153,3 +153,76 @@ export interface SubAdmin {
   created_at: string;
   tenant_ids: number[];
 }
+
+export interface BoilerplatePattern {
+  id: number;
+  tenant_id: number;
+  pattern_type: "literal" | "regex";
+  pattern: string;
+  description: string | null;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoilerplatePatternCreate {
+  pattern_type: "literal" | "regex";
+  pattern: string;
+  description?: string;
+  is_active?: boolean;
+  sort_order?: number;
+}
+
+export interface BoilerplatePatternUpdate {
+  pattern_type?: "literal" | "regex";
+  pattern?: string;
+  description?: string | null;
+  is_active?: boolean;
+  sort_order?: number;
+}
+
+export interface BoilerplatePreviewResponse {
+  original: string;
+  applied: string;
+  removed_count: number;
+}
+
+export async function listBoilerplatePatterns(tenantId: number): Promise<BoilerplatePattern[]> {
+  return adminFetch<BoilerplatePattern[]>(`/tenants/${tenantId}/boilerplate`);
+}
+
+export async function createBoilerplatePattern(
+  tenantId: number,
+  data: BoilerplatePatternCreate
+): Promise<BoilerplatePattern> {
+  return adminFetch<BoilerplatePattern>(`/tenants/${tenantId}/boilerplate`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateBoilerplatePattern(
+  tenantId: number,
+  patternId: number,
+  data: BoilerplatePatternUpdate
+): Promise<BoilerplatePattern> {
+  return adminFetch<BoilerplatePattern>(`/tenants/${tenantId}/boilerplate/${patternId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteBoilerplatePattern(tenantId: number, patternId: number): Promise<void> {
+  return adminFetch<void>(`/tenants/${tenantId}/boilerplate/${patternId}`, { method: "DELETE" });
+}
+
+export async function previewBoilerplatePatterns(
+  tenantId: number,
+  sampleText: string
+): Promise<BoilerplatePreviewResponse> {
+  return adminFetch<BoilerplatePreviewResponse>(`/tenants/${tenantId}/boilerplate/preview`, {
+    method: "POST",
+    body: JSON.stringify({ sample_text: sampleText }),
+  });
+}

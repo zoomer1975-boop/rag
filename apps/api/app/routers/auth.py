@@ -5,7 +5,7 @@ import logging
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -57,6 +57,45 @@ class LoginResponse(BaseModel):
     tenant_ids: list[int] | None = None
 
 
+_REQUIRED_TABLES: list[tuple[str, str]] = [
+    (
+        "tenant_boilerplate_patterns",
+        """
+        CREATE TABLE IF NOT EXISTS tenant_boilerplate_patterns (
+            id          SERIAL PRIMARY KEY,
+            tenant_id   INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            pattern_type VARCHAR(10) NOT NULL CHECK (pattern_type IN ('literal', 'regex')),
+            pattern     TEXT NOT NULL,
+            description VARCHAR(255),
+            is_active   BOOLEAN NOT NULL DEFAULT true,
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_boilerplate_tenant_type_pattern UNIQUE (tenant_id, pattern_type, pattern)
+        );
+        CREATE INDEX IF NOT EXISTS ix_boilerplate_tenant_active
+            ON tenant_boilerplate_patterns (tenant_id, is_active);
+        """,
+    ),
+]
+
+
+async def _ensure_tables(db: AsyncSession) -> None:
+    """최고관리자 로그인 시 누락된 테이블을 자동으로 생성합니다."""
+    for table_name, ddl in _REQUIRED_TABLES:
+        result = await db.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = :table"
+            ),
+            {"table": table_name},
+        )
+        if result.scalar() is None:
+            logger.info("자동 테이블 생성: %s", table_name)
+            await db.execute(text(ddl))
+            await db.commit()
+
+
 def _get_client_ip(request: Request) -> str:
     """클라이언트 IP 추출"""
     # X-Forwarded-For (프록시 뒤)
@@ -83,6 +122,7 @@ async def login(
 
     # 1. 최고관리자 체크
     if req.username == settings.admin_username and req.password == settings.admin_password:
+        await _ensure_tables(db)
         return LoginResponse(ok=True, is_superadmin=True)
 
     # 2. 부관리자 체크

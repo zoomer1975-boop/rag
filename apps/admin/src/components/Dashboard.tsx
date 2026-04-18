@@ -9,15 +9,17 @@ import WidgetPanel from "./WidgetPanel";
 import ConversationHistoryPanel from "./ConversationHistoryPanel";
 import ChatTestPanel from "./ChatTestPanel";
 import ApiToolsPanel from "./ApiToolsPanel";
+import BoilerplatePanel from "./BoilerplatePanel";
 import LogoutButton from "./LogoutButton";
 import styles from "./Dashboard.module.css";
 
-type Tab = "stats" | "documents" | "settings" | "widget" | "history" | "chat" | "tools";
+type Tab = "stats" | "documents" | "settings" | "boilerplate" | "widget" | "history" | "chat" | "tools";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "stats", label: "통계" },
   { id: "documents", label: "문서 관리" },
   { id: "settings", label: "설정" },
+  { id: "boilerplate", label: "상용문구 제거" },
   { id: "widget", label: "위젯 코드" },
   { id: "history", label: "대화이력" },
   { id: "chat", label: "채팅 테스트" },
@@ -66,6 +68,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Pr
         {activeTab === "widget" && <WidgetPanel tenant={tenant} />}
         {activeTab === "history" && <ConversationHistoryPanel apiKey={apiKey} />}
         {activeTab === "chat" && <ChatTestPanel tenant={tenant} />}
+        {activeTab === "boilerplate" && <BoilerplatePanel tenantId={tenant.id} />}
         {activeTab === "tools" && <ApiToolsPanel tenant={tenant} />}
       </main>
     </div>
