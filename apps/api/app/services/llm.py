@@ -193,10 +193,12 @@ class LLMClient:
                 if _THINKING_START in buf:
                     in_thinking = True
                 else:
-                    # thinking 마커가 보이지 않으면 버퍼를 flush하고 직접 yield
-                    # (단, 마커가 토큰 경계에 걸칠 수 있으므로 마커 길이만큼 보유)
-                    safe_len = len(buf) - len(_THINKING_START)
-                    if safe_len > 0:
+                    # thinking 마커 없음 — 충분한 버퍼가 쌓일 때까지만 보유하고 나머지는 yield
+                    # 마커 길이(10) 미만으로 유지하되, 마커 감지 시를 대비해 최대 길이만큼 버퍼 유지
+                    min_buffer_size = len(_THINKING_START)
+                    if len(buf) > min_buffer_size:
+                        # 마커가 토큰 경계에 걸칠 가능성을 대비해 마커 길이만큼 리저브
+                        safe_len = len(buf) - min_buffer_size
                         yield buf[:safe_len]
                         buf = buf[safe_len:]
 
