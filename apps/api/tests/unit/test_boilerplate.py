@@ -60,6 +60,20 @@ class TestApply:
         result = apply("remove me", [_lit("remove me")])
         assert result == ""
 
+    def test_literal_matches_phrase_with_internal_newline(self):
+        # Jina Reader가 문구 중간에 줄바꿈을 삽입한 경우에도 제거돼야 함
+        text = "본문 내용입니다.\nCopyright 2024\nACME Corp.\n계속되는 본문."
+        result = apply(text, [_lit("Copyright 2024 ACME Corp.")])
+        assert "Copyright" not in result
+        assert "본문 내용입니다." in result
+        assert "계속되는 본문." in result
+
+    def test_literal_matches_phrase_with_multiple_spaces(self):
+        # 공백이 여러 개인 경우도 매칭
+        text = "앞  Copyright 2024  ACME Corp.  뒤"
+        result = apply(text, [_lit("Copyright 2024 ACME Corp.")])
+        assert "Copyright" not in result
+
     def test_pattern_error_skipped_gracefully(self):
         # regex pattern that errors on sub (shouldn't happen with compiled patterns,
         # but guard is in place)
@@ -84,9 +98,9 @@ class TestValidatePattern:
         assert "빈 문자열" in err
 
     def test_pattern_too_long_returns_error(self):
-        err = validate_pattern("literal", "x" * 2001)
+        err = validate_pattern("literal", "x" * 10001)
         assert err is not None
-        assert "2000" in err
+        assert "10000" in err
 
     def test_invalid_regex_returns_error(self):
         err = validate_pattern("regex", "[invalid(")
@@ -103,4 +117,4 @@ class TestValidatePattern:
         assert validate_pattern("literal", "[invalid(") is None
 
     def test_pattern_exactly_at_max_length_is_valid(self):
-        assert validate_pattern("literal", "x" * 2000) is None
+        assert validate_pattern("literal", "x" * 10000) is None

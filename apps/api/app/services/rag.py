@@ -1,14 +1,18 @@
-"""RAG 파이프라인 — 검색 + 프롬프트 조립"""
+"""RAG 파이프라인 — GraphRAG 검색 + 프롬프트 조립"""
+
+from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk
 from app.models.tenant import Tenant
 from app.services.embeddings import EmbeddingClient
+from app.services.graph_retriever import GraphRAGRetriever, GraphRetrievalResult
 from app.services.language import LanguageService
+from app.services.llm import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,6 @@ If the answer is not in the context, say so honestly — do not make up informat
 
 {lang_instruction}
 
-Context:
 {context}
 """
 
@@ -29,10 +32,13 @@ class RAGService:
         db: AsyncSession,
         embedding_client: EmbeddingClient,
         language_service: LanguageService,
+        llm_client: LLMClient | None = None,
     ) -> None:
         self._db = db
         self._embedding_client = embedding_client
         self._language_service = language_service
+        self._llm_client = llm_client
+        self._graph_result: GraphRetrievalResult | None = None
 
     async def retrieve(
         self,
@@ -41,56 +47,51 @@ class RAGService:
         top_k: int = 5,
         min_score: float = 0.3,
     ) -> list[dict]:
-        """쿼리와 유사한 청크를 테넌트 격리 하에 검색합니다."""
-        query_embedding = await self._embedding_client.embed(query)
-        embedding_dim = len(query_embedding)
-        logger.info("retrieve: tenant_id=%d, embedding_dim=%d, query=%r", tenant_id, embedding_dim, query[:80])
-
-        # pgvector cosine similarity 검색 (tenant_id 필터로 격리 보장)
-        result = await self._db.execute(
-            text(
-                """
-                SELECT id, content, chunk_metadata,
-                       1 - (embedding <=> CAST(:embedding AS vector)) AS score
-                FROM chunks
-                WHERE tenant_id = :tenant_id
-                  AND embedding IS NOT NULL
-                ORDER BY embedding <=> CAST(:embedding AS vector)
-                LIMIT :top_k
-                """
-            ),
-            {
-                "embedding": str(query_embedding),
-                "tenant_id": tenant_id,
-                "top_k": top_k,
-            },
+        """GraphRAG dual-level 검색으로 관련 청크를 반환합니다."""
+        retriever = GraphRAGRetriever(
+            db=self._db,
+            embedding_client=self._embedding_client,
+            llm_client=self._llm_client,
         )
-        rows = result.fetchall()
+        graph_result = await retriever.retrieve(query=query, tenant_id=tenant_id)
+        self._graph_result = graph_result
 
-        chunks = [
-            {
-                "id": row.id,
-                "content": row.content,
-                "metadata": row.chunk_metadata,
-                "score": float(row.score),
-            }
-            for row in rows
-        ]
-
-        # 점수 로깅 (디버깅용)
-        for i, c in enumerate(chunks):
-            logger.info(
-                "chunk[%d]: id=%s score=%.4f preview=%r",
-                i, c["id"], c["score"], c["content"][:100],
-            )
-
-        # 최소 유사도 미달 청크 제거
-        filtered = [c for c in chunks if c["score"] >= min_score]
         logger.info(
-            "retrieve: total=%d, filtered(score>=%.2f)=%d",
-            len(chunks), min_score, len(filtered),
+            "retrieve: tenant_id=%d entities=%d relationships=%d chunk_ids=%d",
+            tenant_id,
+            len(graph_result.entities),
+            len(graph_result.relationships),
+            len(graph_result.chunk_ids),
         )
-        return filtered
+
+        if not graph_result.chunk_ids:
+            return []
+
+        stmt = select(Chunk).where(
+            Chunk.tenant_id == tenant_id,
+            Chunk.id.in_(graph_result.chunk_ids),
+        )
+        rows = await self._db.execute(stmt)
+        chunk_map = {c.id: c for c in rows.scalars().all()}
+
+        chunks = []
+        for cid in graph_result.chunk_ids:
+            chunk = chunk_map.get(cid)
+            if chunk is None:
+                continue
+            chunks.append(
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "metadata": chunk.chunk_metadata or {},
+                    "score": 1.0,
+                }
+            )
+            if len(chunks) >= top_k:
+                break
+
+        logger.info("retrieve: returned %d chunks for tenant_id=%d", len(chunks), tenant_id)
+        return chunks
 
     def build_messages(
         self,
@@ -110,24 +111,48 @@ class RAGService:
             allowed_langs=allowed_langs,
         )
 
-        context = "\n\n---\n\n".join(
-            f"[Source {i + 1}] (score: {chunk['score']:.2f})\n{chunk['content']}"
-            for i, chunk in enumerate(retrieved_chunks)
-        )
+        context_parts: list[str] = []
 
-        logger.info("build_messages: chunk_count=%d, context_chars=%d", len(retrieved_chunks), len(context))
+        if self._graph_result and self._graph_result.entities:
+            entity_lines = "\n".join(
+                f"- [{e.entity_type}] {e.name}: {e.description}"
+                for e in self._graph_result.entities
+            )
+            context_parts.append(f"## Entities\n{entity_lines}")
+
+        if self._graph_result and self._graph_result.relationships:
+            rel_lines = "\n".join(
+                f"- {r.description} (weight: {r.weight:.2f})"
+                for r in self._graph_result.relationships
+            )
+            context_parts.append(f"## Relationships\n{rel_lines}")
+
+        if retrieved_chunks:
+            excerpts = "\n\n---\n\n".join(
+                f"[Source {i + 1}]\n{chunk['content']}"
+                for i, chunk in enumerate(retrieved_chunks)
+            )
+            context_parts.append(f"## Source Excerpts\n{excerpts}")
+
+        context = "\n\n".join(context_parts) if context_parts else "No relevant documents found."
+
+        logger.info(
+            "build_messages: entities=%d relationships=%d chunks=%d context_chars=%d",
+            len(self._graph_result.entities) if self._graph_result else 0,
+            len(self._graph_result.relationships) if self._graph_result else 0,
+            len(retrieved_chunks),
+            len(context),
+        )
 
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             tenant_name=tenant.name,
             lang_instruction=lang_instruction,
-            context=context if context else "No relevant documents found.",
+            context=context,
         )
 
-        # 테넌트 커스텀 시스템 프롬프트 추가
         if tenant.system_prompt:
             system_prompt = f"{tenant.system_prompt}\n\n{system_prompt}"
 
-        # tool 사용 강제 안내
         if has_tools:
             system_prompt += (
                 "\n\n## Tool Use Instructions (MANDATORY)\n"
@@ -141,7 +166,6 @@ class RAGService:
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
 
-        # 대화 히스토리 (최근 10턴)
         for msg in conversation_history[-10:]:
             messages.append({"role": msg["role"], "content": msg["content"]})
 

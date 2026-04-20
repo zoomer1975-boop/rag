@@ -13,6 +13,20 @@ function timingSafeStringEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
+function buildCookieParts(token: string): string[] {
+  const isSecure =
+    process.env.NODE_ENV === "production" &&
+    process.env.COOKIE_SECURE !== "false";
+  return [
+    `${SESSION_COOKIE_NAME}=${token}`,
+    `Max-Age=${SESSION_MAX_AGE}`,
+    "Path=/",
+    "HttpOnly",
+    ...(isSecure ? ["Secure"] : []),
+    "SameSite=Strict",
+  ];
+}
+
 interface AuthLoginResponse {
   ok: boolean;
   is_superadmin: boolean;
@@ -69,20 +83,13 @@ export async function POST(req: Request) {
         authResult.tenant_ids
       );
 
-      const cookieValue = [
-        `${SESSION_COOKIE_NAME}=${token}`,
-        `Max-Age=${SESSION_MAX_AGE}`,
-        "Path=/",
-        "HttpOnly",
-        "Secure",
-        "SameSite=Strict",
-      ].join("; ");
+      const cookieParts = buildCookieParts(token);
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Set-Cookie": cookieValue,
+          "Set-Cookie": cookieParts.join("; "),
         },
       });
     }
@@ -105,20 +112,12 @@ export async function POST(req: Request) {
     }
 
     const token = await createSessionToken(inputUser, true);
-    const cookieValue = [
-      `${SESSION_COOKIE_NAME}=${token}`,
-      `Max-Age=${SESSION_MAX_AGE}`,
-      "Path=/",
-      "HttpOnly",
-      "Secure",
-      "SameSite=Strict",
-    ].join("; ");
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Set-Cookie": cookieValue,
+        "Set-Cookie": buildCookieParts(token).join("; "),
       },
     });
   }

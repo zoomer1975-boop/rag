@@ -57,32 +57,36 @@ class LoginResponse(BaseModel):
     tenant_ids: list[int] | None = None
 
 
-_REQUIRED_TABLES: list[tuple[str, str]] = [
+_REQUIRED_TABLES: list[tuple[str, list[str]]] = [
     (
         "tenant_boilerplate_patterns",
-        """
-        CREATE TABLE IF NOT EXISTS tenant_boilerplate_patterns (
-            id          SERIAL PRIMARY KEY,
-            tenant_id   INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-            pattern_type VARCHAR(10) NOT NULL CHECK (pattern_type IN ('literal', 'regex')),
-            pattern     TEXT NOT NULL,
-            description VARCHAR(255),
-            is_active   BOOLEAN NOT NULL DEFAULT true,
-            sort_order  INTEGER NOT NULL DEFAULT 0,
-            created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT uq_boilerplate_tenant_type_pattern UNIQUE (tenant_id, pattern_type, pattern)
-        );
-        CREATE INDEX IF NOT EXISTS ix_boilerplate_tenant_active
-            ON tenant_boilerplate_patterns (tenant_id, is_active);
-        """,
+        [
+            """
+            CREATE TABLE IF NOT EXISTS tenant_boilerplate_patterns (
+                id          SERIAL PRIMARY KEY,
+                tenant_id   INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                pattern_type VARCHAR(10) NOT NULL CHECK (pattern_type IN ('literal', 'regex')),
+                pattern     TEXT NOT NULL,
+                description VARCHAR(255),
+                is_active   BOOLEAN NOT NULL DEFAULT true,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                CONSTRAINT uq_boilerplate_tenant_type_pattern UNIQUE (tenant_id, pattern_type, pattern)
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_boilerplate_tenant_active
+                ON tenant_boilerplate_patterns (tenant_id, is_active)
+            """,
+        ],
     ),
 ]
 
 
 async def _ensure_tables(db: AsyncSession) -> None:
     """최고관리자 로그인 시 누락된 테이블을 자동으로 생성합니다."""
-    for table_name, ddl in _REQUIRED_TABLES:
+    for table_name, ddl_statements in _REQUIRED_TABLES:
         result = await db.execute(
             text(
                 "SELECT 1 FROM information_schema.tables "
@@ -92,7 +96,8 @@ async def _ensure_tables(db: AsyncSession) -> None:
         )
         if result.scalar() is None:
             logger.info("자동 테이블 생성: %s", table_name)
-            await db.execute(text(ddl))
+            for ddl in ddl_statements:
+                await db.execute(text(ddl))
             await db.commit()
 
 

@@ -31,7 +31,7 @@ router = APIRouter(
 
 class PatternCreate(BaseModel):
     pattern_type: str = Field(..., pattern="^(literal|regex)$")
-    pattern: str = Field(..., min_length=1, max_length=2000)
+    pattern: str = Field(..., min_length=1, max_length=10000)
     description: str | None = Field(None, max_length=255)
     is_active: bool = True
     sort_order: int = 0
@@ -47,7 +47,7 @@ class PatternCreate(BaseModel):
 
 class PatternUpdate(BaseModel):
     pattern_type: str | None = Field(None, pattern="^(literal|regex)$")
-    pattern: str | None = Field(None, min_length=1, max_length=2000)
+    pattern: str | None = Field(None, min_length=1, max_length=10000)
     description: str | None = Field(None, max_length=255)
     is_active: bool | None = None
     sort_order: int | None = None

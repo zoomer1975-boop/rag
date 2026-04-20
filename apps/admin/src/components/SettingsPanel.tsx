@@ -43,6 +43,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     widget_placeholder: tenant.widget_config.placeholder,
     widget_position: tenant.widget_config.position,
     quick_replies: (tenant.widget_config.quick_replies ?? []) as string[],
+    clarification_enabled: tenant.clarification_enabled,
   });
   const [langsmithKey, setLangsmithKey] = useState("");
   const [langsmithKeyTouched, setLangsmithKeyTouched] = useState(false);
@@ -96,6 +97,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
         allowed_langs: form.allowed_langs,
         is_active: form.is_active,
         default_url_refresh_hours: form.default_url_refresh_hours,
+        clarification_enabled: form.clarification_enabled,
         widget_config: {
           primary_color: form.widget_primary_color,
           greeting: form.widget_greeting,
@@ -565,6 +567,24 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             placeholder={tenant.has_langsmith ? "새 키 입력 (비워두면 기존 키 유지, 저장 시 삭제)" : "ls-..."}
             autoComplete="new-password"
           />
+        </Field>
+      </fieldset>
+
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>명확화 질문 (Clarification)</legend>
+        <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 12 }}>
+          사용자 질문이 모호하거나 컨텍스트가 부족할 때 추가 질문을 먼저 던져 답변 품질을 높입니다.
+          짧은 쿼리(4토큰 미만)에만 발동되며, 최대 2라운드까지 반복합니다.
+        </p>
+        <Field label="명확화 질문 활성화">
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={form.clarification_enabled}
+              onChange={(e) => setForm((prev) => ({ ...prev, clarification_enabled: e.target.checked }))}
+            />
+            <span>{form.clarification_enabled ? "활성" : "비활성"}</span>
+          </label>
         </Field>
       </fieldset>
 

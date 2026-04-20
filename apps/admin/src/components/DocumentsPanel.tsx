@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, type Document } from "@/lib/api";
+import DocumentChunksModal from "./DocumentChunksModal";
 import styles from "./DocumentsPanel.module.css";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/rag/api/v1";
@@ -40,6 +41,7 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -227,6 +229,14 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
                         {isRefreshing ? "…" : "↻"}
                       </button>
                     )}
+                    <button
+                      className={styles.viewBtn}
+                      onClick={() => setViewingDoc(doc)}
+                      disabled={doc.status !== "completed"}
+                      title="내용 보기"
+                    >
+                      내용
+                    </button>
                     <span className={styles.statusBadge} style={{ color: st.color }}>
                       {st.label}
                     </span>
@@ -240,6 +250,14 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
           </ul>
         )}
       </section>
+
+      {viewingDoc && (
+        <DocumentChunksModal
+          apiKey={apiKey}
+          doc={viewingDoc}
+          onClose={() => setViewingDoc(null)}
+        />
+      )}
     </div>
   );
 }

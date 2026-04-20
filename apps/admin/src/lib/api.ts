@@ -82,6 +82,8 @@ export interface Tenant {
   system_prompt: string | null;
   default_url_refresh_hours: number;
   has_langsmith: boolean;
+  clarification_enabled: boolean;
+  clarification_config: Record<string, unknown> | null;
 }
 
 export interface WidgetConfig {
@@ -164,6 +166,94 @@ export interface BoilerplatePattern {
   sort_order: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GraphNode {
+  id: number;
+  name: string;
+  entity_type: string;
+  description: string;
+  degree: number;
+  chunk_count: number;
+}
+
+export interface GraphEdge {
+  id: number;
+  source: number;
+  target: number;
+  description: string;
+  keywords: string[];
+  weight: number;
+}
+
+export interface GraphPayload {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+
+export interface GraphSummary {
+  entity_count: number;
+  relationship_count: number;
+  entity_types: { type: string; count: number }[];
+}
+
+export async function fetchGraphSummary(apiKey: string): Promise<GraphSummary> {
+  return apiFetch<GraphSummary>("/graph/summary", apiKey);
+}
+
+export async function fetchGraph(
+  apiKey: string,
+  params?: { types?: string[]; q?: string; limit?: number }
+): Promise<GraphPayload> {
+  const sp = new URLSearchParams();
+  params?.types?.forEach((t) => sp.append("types", t));
+  if (params?.q) sp.set("q", params.q);
+  if (params?.limit) sp.set("limit", String(params.limit));
+  const qs = sp.toString();
+  return apiFetch<GraphPayload>(`/graph/${qs ? `?${qs}` : ""}`, apiKey);
+}
+
+export async function fetchNeighborhood(
+  apiKey: string,
+  entityId: number,
+  params?: { depth?: number; limit?: number }
+): Promise<GraphPayload> {
+  const sp = new URLSearchParams();
+  if (params?.depth) sp.set("depth", String(params.depth));
+  if (params?.limit) sp.set("limit", String(params.limit));
+  const qs = sp.toString();
+  return apiFetch<GraphPayload>(
+    `/graph/neighborhood/${entityId}${qs ? `?${qs}` : ""}`,
+    apiKey
+  );
+}
+
+export interface Chunk {
+  id: number;
+  chunk_index: number;
+  content: string;
+  created_at: string;
+}
+
+export interface ChunkListResponse {
+  items: Chunk[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function listDocumentChunks(
+  apiKey: string,
+  docId: number,
+  params?: { limit?: number; offset?: number }
+): Promise<ChunkListResponse> {
+  const limit = params?.limit ?? 50;
+  const offset = params?.offset ?? 0;
+  return apiFetch<ChunkListResponse>(
+    `/ingest/documents/${docId}/chunks?limit=${limit}&offset=${offset}`,
+    apiKey
+  );
 }
 
 export interface BoilerplatePatternCreate {

@@ -61,6 +61,8 @@ class TenantUpdate(BaseModel):
     is_active: bool | None = None
     default_url_refresh_hours: int | None = Field(None, ge=0, le=8760)  # 0 = 비활성, 최대 1년
     langsmith_api_key: str | None = None
+    clarification_enabled: bool | None = None
+    clarification_config: dict | None = None
 
 
 class TenantResponse(BaseModel):
@@ -75,7 +77,9 @@ class TenantResponse(BaseModel):
     widget_config: dict
     system_prompt: str | None
     default_url_refresh_hours: int
-    has_langsmith: bool = False  # 키 존재 여부만 노출 (키 자체는 숨김)
+    has_langsmith: bool = False
+    clarification_enabled: bool = False
+    clarification_config: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -94,6 +98,8 @@ class TenantResponse(BaseModel):
             system_prompt=tenant.system_prompt,
             default_url_refresh_hours=tenant.default_url_refresh_hours,
             has_langsmith=bool(tenant.langsmith_api_key),
+            clarification_enabled=tenant.clarification_enabled,
+            clarification_config=tenant.clarification_config,
         )
 
 

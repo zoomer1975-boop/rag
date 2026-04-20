@@ -19,6 +19,7 @@ from app.models.tenant import Tenant
 from app.models.tenant_api_tool import TenantApiTool
 import redis.asyncio as aioredis
 
+from app.services.clarifier import ClarifierService
 from app.services.domain_validation import is_origin_allowed
 from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.greeting_translator import GreetingTranslator
@@ -144,10 +145,9 @@ async def chat(
         .order_by(Message.created_at.desc())
         .limit(20)
     )
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in reversed(history_result.scalars().all())
-    ]
+    history_msgs = list(reversed(history_result.scalars().all()))
+    history = [{"role": m.role, "content": m.content} for m in history_msgs]
+    clarification_round = sum(1 for m in history_msgs if m.message_type == "clarification_request")
 
     # LangSmith 로거 초기화 (키 없으면 no-op)
     ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
@@ -178,6 +178,7 @@ async def chat(
         db=db,
         embedding_client=embedding_client,
         language_service=lang_service,
+        llm_client=llm_client,
     )
     retrieved_chunks = await rag_service.retrieve(
         query=body.message,
@@ -201,6 +202,38 @@ async def chat(
         has_tools=bool(openai_tools),
     )
     sources = rag_service.build_sources(retrieved_chunks)
+
+    # 명확화 질문 체크 (테넌트별 옵션)
+    if tenant.clarification_enabled:
+        clarifier = ClarifierService()
+        clarification = await clarifier.should_clarify(
+            query=body.message,
+            top_score=None,  # GraphRAG는 의미있는 유사도 점수를 제공하지 않음
+            context_snippets=[c.get("content", "")[:300] for c in retrieved_chunks[:3]],
+            clarification_round=clarification_round,
+        )
+        if clarification.needs_clarification:
+            user_msg = Message(
+                conversation_id=conversation.id,
+                role="user",
+                content=body.message,
+            )
+            db.add(user_msg)
+            await db.commit()
+            return StreamingResponse(
+                _stream_clarification(
+                    session_id=session_id,
+                    questions=clarification.questions,
+                    conversation_id=conversation.id,
+                ),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-Session-Id": session_id,
+                    "X-Language": resolved_lang,
+                },
+            )
 
     # 사용자 메시지 저장
     user_msg = Message(
@@ -237,6 +270,35 @@ async def chat(
             "X-Language": resolved_lang,
         },
     )
+
+
+async def _stream_clarification(
+    session_id: str,
+    questions: list[str],
+    conversation_id: int,
+) -> AsyncGenerator[str, None]:
+    yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+    yield f"data: {json.dumps({'type': 'clarification', 'questions': questions})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
+    await _save_clarification_message(conversation_id, questions)
+
+
+async def _save_clarification_message(conversation_id: int, questions: list[str]) -> None:
+    from app.db.session import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            msg = Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="\n".join(questions),
+                message_type="clarification_request",
+                clarification_meta={"questions": questions},
+            )
+            db.add(msg)
+            await db.commit()
+    except Exception as exc:
+        logger.warning("명확화 메시지 저장 실패 (conversation_id=%d): %s", conversation_id, exc)
 
 
 async def _stream_response(

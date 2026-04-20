@@ -10,10 +10,11 @@ import ConversationHistoryPanel from "./ConversationHistoryPanel";
 import ChatTestPanel from "./ChatTestPanel";
 import ApiToolsPanel from "./ApiToolsPanel";
 import BoilerplatePanel from "./BoilerplatePanel";
+import GraphPanel from "./GraphPanel";
 import LogoutButton from "./LogoutButton";
 import styles from "./Dashboard.module.css";
 
-type Tab = "stats" | "documents" | "settings" | "boilerplate" | "widget" | "history" | "chat" | "tools";
+type Tab = "stats" | "documents" | "settings" | "boilerplate" | "widget" | "history" | "chat" | "tools" | "graph";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "stats", label: "통계" },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "history", label: "대화이력" },
   { id: "chat", label: "채팅 테스트" },
   { id: "tools", label: "API 도구" },
+  { id: "graph", label: "그래프" },
 ];
 
 interface Props {
@@ -70,6 +72,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Pr
         {activeTab === "chat" && <ChatTestPanel tenant={tenant} />}
         {activeTab === "boilerplate" && <BoilerplatePanel tenantId={tenant.id} />}
         {activeTab === "tools" && <ApiToolsPanel tenant={tenant} />}
+        {activeTab === "graph" && <GraphPanel apiKey={apiKey} />}
       </main>
     </div>
   );

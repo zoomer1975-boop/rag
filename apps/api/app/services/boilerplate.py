@@ -14,7 +14,7 @@ from app.models.boilerplate_pattern import BoilerplatePattern
 
 logger = logging.getLogger(__name__)
 
-_MAX_PATTERN_LEN = 2000
+_MAX_PATTERN_LEN = 10000
 _MAX_PATTERNS_PER_TENANT = 100
 
 # 중첩 quantifier ReDoS 휴리스틱
@@ -56,7 +56,20 @@ async def load_patterns(db: AsyncSession, tenant_id: int) -> list[_CompiledPatte
                     row.pattern,
                     exc,
                 )
+    logger.debug("보일러플레이트 패턴 로드: tenant_id=%d, 활성=%d", tenant_id, len(compiled))
     return compiled
+
+
+def _literal_to_whitespace_regex(literal: str) -> re.Pattern:
+    """리터럴 패턴을 공백 정규화 매칭 정규식으로 변환합니다.
+
+    Jina Reader 등이 줄바꿈을 삽입해 문구가 여러 줄에 걸쳐 있어도 매칭되도록
+    단어 사이의 공백을 \\s+ 로 치환합니다.
+    """
+    words = literal.split()
+    if not words:
+        return re.compile(re.escape(literal))
+    return re.compile(r"\s+".join(re.escape(w) for w in words))
 
 
 def apply(text: str, patterns: list[_CompiledPattern]) -> str:
@@ -64,14 +77,22 @@ def apply(text: str, patterns: list[_CompiledPattern]) -> str:
     if not patterns:
         return text
 
+    original_len = len(text)
     for p in patterns:
         try:
             if p.kind == "literal":
+                # 1단계: 정확한 문자열 매칭
                 text = text.replace(p.value, "")
+                # 2단계: 공백 정규화 매칭 — Jina 등이 줄바꿈을 삽입한 경우 대응
+                text = _literal_to_whitespace_regex(p.value).sub("", text)
             else:
                 text = p.value.sub("", text)
         except Exception as exc:
             logger.warning("보일러플레이트 패턴 적용 오류 (id=%d): %s — 건너뜁니다.", p.id, exc)
+
+    removed = original_len - len(text)
+    if removed:
+        logger.info("보일러플레이트 제거 완료: 총 %d bytes 제거됨", removed)
 
     # 연속된 3개 이상의 빈 줄을 2개로 정리
     text = re.sub(r"\n{3,}", "\n\n", text)

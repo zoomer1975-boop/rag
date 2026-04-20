@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,11 @@ class IngestService:
     async def ingest_url(self, document: Document, crawl_full_site: bool = False) -> None:
         """URL을 크롤링하여 청킹 + 임베딩 후 저장합니다."""
         await self._set_status(document, "processing")
+        # 갱신 시 기존 청크 삭제
+        await self._db.execute(
+            delete(Chunk).where(Chunk.document_id == document.id)
+        )
+        await self._db.flush()
         try:
             if crawl_full_site:
                 pages = await self._crawler.crawl_site(document.source_url)
@@ -83,6 +88,11 @@ class IngestService:
     async def ingest_file(self, document: Document) -> None:
         """업로드된 파일을 파싱하여 청킹 + 임베딩 후 저장합니다."""
         await self._set_status(document, "processing")
+        # 갱신 시 기존 청크 삭제
+        await self._db.execute(
+            delete(Chunk).where(Chunk.document_id == document.id)
+        )
+        await self._db.flush()
         try:
             text = self._parser.parse(document.file_path, document.source_type)
             patterns = await boilerplate_svc.load_patterns(self._db, document.tenant_id)
@@ -157,8 +167,18 @@ class IngestService:
     async def _extract_graph(self, tenant_id: int, chunks: list[Chunk]) -> None:
         if self._graph_extractor is None or self._graph_store is None:
             return
-        for chunk in chunks:
-            extraction = await self._graph_extractor.extract(chunk.content)
+
+        import asyncio
+
+        extractions = await asyncio.gather(
+            *[self._graph_extractor.extract(chunk.content) for chunk in chunks],
+            return_exceptions=True,
+        )
+
+        for chunk, extraction in zip(chunks, extractions):
+            if isinstance(extraction, Exception):
+                logger.warning("graph extraction failed for chunk %d: %s", chunk.id, extraction)
+                continue
             if extraction.entities or getattr(extraction, "relationships", None):
                 await self._graph_store.upsert(
                     tenant_id=tenant_id,

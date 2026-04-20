@@ -50,6 +50,10 @@ class Tenant(Base):
     # URL 자동 갱신 기본 주기 (시간, 0 = 비활성)
     default_url_refresh_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # 명확화 질문 기능
+    clarification_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    clarification_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
