@@ -1,5 +1,7 @@
 """API Key 인증 미들웨어"""
 
+import secrets
+
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +39,7 @@ async def verify_admin(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="관리자 API 토큰이 서버에 설정되지 않았습니다.",
         )
-    if not x_admin_token or x_admin_token != settings.admin_api_token:
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, settings.admin_api_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="유효하지 않은 관리자 토큰입니다.",

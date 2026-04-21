@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,8 +36,11 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
 class ChatRequest(BaseModel):
-    message: str
-    session_id: str | None = None
+    message: str = Field(..., min_length=1, max_length=4000)
+    session_id: str | None = Field(
+        None,
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    )
 
 
 @router.get("/widget-config")
