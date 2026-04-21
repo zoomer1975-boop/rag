@@ -14,7 +14,20 @@
 
   const cfg = window.RagChatConfig || {};
   const API_KEY = cfg.apiKey || "";
-  const API_URL = cfg.apiUrl || "/rag/api/v1/chat";
+
+  function sanitizeApiUrl(url) {
+    if (!url) return "/rag/api/v1/chat";
+    try {
+      const u = new URL(url, location.href);
+      if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("invalid protocol");
+      return u.href;
+    } catch {
+      console.warn("[RagChat] 잘못된 apiUrl — 기본값 사용");
+      return "/rag/api/v1/chat";
+    }
+  }
+
+  const API_URL = sanitizeApiUrl(cfg.apiUrl);
 
   if (!API_KEY) {
     console.warn("[RagChat] apiKey가 설정되지 않았습니다.");
@@ -339,7 +352,7 @@
       <div class="messages" id="messages" aria-live="polite"></div>
       <div class="quick-replies hidden" id="quick-replies"></div>
       <div class="input-area">
-        <input type="text" id="msg-input" placeholder="메시지를 입력하세요..." autocomplete="off" />
+        <input type="text" id="msg-input" placeholder="메시지를 입력하세요..." autocomplete="off" maxlength="2000" />
         <button class="send-btn" id="send-btn" disabled aria-label="전송">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -387,11 +400,16 @@
     }
     if (config.button_icon_url) {
       const img = document.createElement("img");
-      // 상대 경로인 경우 API 서버 origin으로 절대 URL로 변환
-      // (위젯이 다른 도메인에 임베드될 때 올바른 서버를 가리키도록)
-      const iconUrl = config.button_icon_url.startsWith("http")
-        ? config.button_icon_url
-        : (() => { try { return new URL(API_URL).origin + config.button_icon_url; } catch { return config.button_icon_url; } })();
+      let iconUrl = null;
+      try {
+        const raw = config.button_icon_url.startsWith("http")
+          ? config.button_icon_url
+          : new URL(API_URL).origin + config.button_icon_url;
+        const u = new URL(raw);
+        if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("invalid protocol");
+        iconUrl = u.href;
+      } catch { iconUrl = null; }
+      if (!iconUrl) return;
       img.src = iconUrl;
       img.width = 56;
       img.height = 56;
@@ -461,7 +479,25 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function decodeEscapedEntities(str) {
+    return str
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  }
+
+  function sanitizeMarkdownUrl(rawUrl) {
+    try {
+      const u = new URL(decodeEscapedEntities(rawUrl));
+      if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+      return u.href.replace(/"/g, "%22").replace(/'/g, "%27");
+    } catch { return null; }
   }
 
   function parseMarkdown(text) {
@@ -477,17 +513,29 @@
     // Images: ![alt](url) — http/https only — must come BEFORE link pattern
     out = out.replace(
       /!\[([^\]]*?)\]\((https?:\/\/[^)]+?)\)/g,
-      '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0;display:block;">'
+      (_, alt, rawUrl) => {
+        const safeUrl = sanitizeMarkdownUrl(rawUrl);
+        if (!safeUrl) return "";
+        return `<img src="${safeUrl}" alt="${alt}" style="max-width:100%;border-radius:8px;margin:4px 0;display:block;">`;
+      }
     );
     // Links: [text](url) — http/https only
     out = out.replace(
       /\[([^\]]+?)\]\((https?:\/\/[^)]+?)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">$1</a>'
+      (_, linkText, rawUrl) => {
+        const safeUrl = sanitizeMarkdownUrl(rawUrl);
+        if (!safeUrl) return linkText;
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">${linkText}</a>`;
+      }
     );
     // Bare URLs
     out = out.replace(
       /(?<![">])(https?:\/\/[^\s<"]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">$1</a>'
+      (_, rawUrl) => {
+        const safeUrl = sanitizeMarkdownUrl(rawUrl);
+        if (!safeUrl) return rawUrl;
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;opacity:0.85;">${rawUrl}</a>`;
+      }
     );
     // Line breaks
     out = out.replace(/\n/g, "<br>");
@@ -590,9 +638,21 @@
 
   // ─── Chat ─────────────────────────────────────────────────────────────────
 
+  const MAX_MSG_LEN = 2000;
+  let lastSentAt = 0;
+
   async function sendMessage() {
     const text = msgInput.value.trim();
     if (!text || isStreaming) return;
+
+    if (text.length > MAX_MSG_LEN) {
+      showError(`메시지는 ${MAX_MSG_LEN}자 이하로 입력해 주세요.`);
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastSentAt < 500) return;
+    lastSentAt = now;
 
     msgInput.value = "";
     setInputEnabled(false);
@@ -648,7 +708,10 @@
           }
 
           if (event.type === "session") {
-            sessionId = event.session_id;
+            const sid = event.session_id;
+            if (typeof sid === "string" && /^[a-zA-Z0-9_-]{8,128}$/.test(sid)) {
+              sessionId = sid;
+            }
           } else if (event.type === "sources") {
             requestAnimationFrame(() => appendSources(event.sources));
           } else if (event.type === "clarification") {
@@ -707,10 +770,10 @@
   // Close on outside click
   document.addEventListener("click", (e) => {
     if (isOpen && !host.contains(e.target)) closeWidget();
-  });
+  }, { passive: true });
 
   // Keyboard shortcut: Escape to close
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && isOpen) closeWidget();
-  });
+  }, { passive: true });
 })();

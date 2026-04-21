@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>chatbot.js 보안 점검 보고서</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-2: #232736;
+      --border: rgba(255,255,255,0.08);
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-2: #a855f7;
+
+      --critical: #ef4444;
+      --critical-bg: rgba(239,68,68,0.08);
+      --critical-border: rgba(239,68,68,0.35);
+
+      --high: #f97316;
+      --high-bg: rgba(249,115,22,0.08);
+      --high-border: rgba(249,115,22,0.35);
+
+      --medium: #eab308;
+      --medium-bg: rgba(234,179,8,0.08);
+      --medium-border: rgba(234,179,8,0.35);
+
+      --low: #3b82f6;
+      --low-bg: rgba(59,130,246,0.08);
+      --low-border: rgba(59,130,246,0.35);
+
+      --info: #22d3ee;
+      --info-bg: rgba(34,211,238,0.07);
+      --info-border: rgba(34,211,238,0.25);
+
+      --pass: #22c55e;
+      --pass-bg: rgba(34,197,94,0.08);
+      --pass-border: rgba(34,197,94,0.3);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ──────────────────────────────── */
+    .page {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* ── Header ──────────────────────────────── */
+    .report-header {
+      margin-bottom: 48px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 32px;
+    }
+    .report-header .badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 6px;
+      padding: 3px 10px;
+      margin-bottom: 14px;
+    }
+    .report-header h1 {
+      font-size: 32px;
+      font-weight: 800;
+      background: linear-gradient(90deg, #fff 30%, var(--accent-2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+    .report-header .meta {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .report-header .meta span { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Summary cards ───────────────────────── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 14px;
+      margin-bottom: 48px;
+    }
+    .summary-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 20px 18px;
+      text-align: center;
+    }
+    .summary-card .num {
+      font-size: 36px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .summary-card .label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .summary-card.critical { border-color: var(--critical-border); }
+    .summary-card.critical .num { color: var(--critical); }
+    .summary-card.high { border-color: var(--high-border); }
+    .summary-card.high .num { color: var(--high); }
+    .summary-card.medium { border-color: var(--medium-border); }
+    .summary-card.medium .num { color: var(--medium); }
+    .summary-card.low { border-color: var(--low-border); }
+    .summary-card.low .num { color: var(--low); }
+    .summary-card.info { border-color: var(--info-border); }
+    .summary-card.info .num { color: var(--info); }
+    .summary-card.pass { border-color: var(--pass-border); }
+    .summary-card.pass .num { color: var(--pass); }
+
+    /* ── Section titles ──────────────────────── */
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title .icon { font-size: 22px; }
+
+    /* ── Finding cards ───────────────────────── */
+    .findings { display: flex; flex-direction: column; gap: 20px; margin-bottom: 48px; }
+
+    .finding {
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .finding-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px 24px;
+      cursor: default;
+    }
+    .severity-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 8px;
+      padding: 4px 10px;
+      margin-top: 3px;
+      border: 1px solid transparent;
+    }
+    .sev-critical { background: var(--critical-bg); border-color: var(--critical-border); color: var(--critical); }
+    .sev-high     { background: var(--high-bg);     border-color: var(--high-border);     color: var(--high); }
+    .sev-medium   { background: var(--medium-bg);   border-color: var(--medium-border);   color: var(--medium); }
+    .sev-low      { background: var(--low-bg);      border-color: var(--low-border);      color: var(--low); }
+    .sev-info     { background: var(--info-bg);     border-color: var(--info-border);     color: var(--info); }
+
+    .finding-header h3 { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .finding-header .desc { font-size: 13px; color: var(--text-muted); }
+
+    .finding-body {
+      padding: 0 24px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+    .field-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .field-value { font-size: 14px; color: var(--text); line-height: 1.7; }
+
+    .tag {
+      display: inline-block;
+      font-size: 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      color: var(--text-muted);
+      font-family: 'Fira Code', Consolas, monospace;
+    }
+
+    pre {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-x: auto;
+      color: #cbd5e1;
+      white-space: pre;
+    }
+    pre .comment { color: #475569; }
+    pre .keyword { color: #818cf8; }
+    pre .string  { color: #86efac; }
+    pre .tag-hl  { color: var(--high); }
+    pre .good    { color: var(--pass); }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+    .vuln-box {
+      background: rgba(239,68,68,0.05);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .fix-box {
+      background: rgba(34,197,94,0.05);
+      border: 1px solid rgba(34,197,94,0.2);
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .box-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 8px;
+    }
+    .vuln-box .box-title { color: var(--critical); }
+    .fix-box .box-title  { color: var(--pass); }
+
+    /* ── Pass section ────────────────────────── */
+    .pass-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 48px;
+    }
+    .pass-item {
+      background: var(--surface);
+      border: 1px solid var(--pass-border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .pass-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .pass-item h4 { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .pass-item p  { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+    /* ── Overall verdict ─────────────────────── */
+    .verdict {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 36px;
+      margin-bottom: 48px;
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+    .verdict-icon { font-size: 48px; flex-shrink: 0; }
+    .verdict h2 { font-size: 22px; font-weight: 800; color: var(--medium); margin-bottom: 10px; }
+    .verdict p  { font-size: 14px; color: var(--text-muted); line-height: 1.8; }
+
+    /* ── Priority table ──────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 48px;
+      font-size: 14px;
+    }
+    th {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .priority-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <header class="report-header">
+    <div class="badge">Security Audit Report</div>
+    <h1>chatbot.js 보안 점검 보고서</h1>
+    <div class="meta">
+      <span>📁 <strong>대상 파일:</strong> apps/widget/chatbot.js</span>
+      <span>📅 <strong>점검일:</strong> 2026-04-21</span>
+      <span>🔍 <strong>점검 범위:</strong> XSS, Injection, CSRF, 입력 검증, 정보 노출, 설계 취약점</span>
+    </div>
+  </header>
+
+  <!-- ── Summary ── -->
+  <div class="summary-grid">
+    <div class="summary-card critical">
+      <div class="num">0</div>
+      <div class="label">Critical</div>
+    </div>
+    <div class="summary-card high">
+      <div class="num">1</div>
+      <div class="label">High</div>
+    </div>
+    <div class="summary-card medium">
+      <div class="num">3</div>
+      <div class="label">Medium</div>
+    </div>
+    <div class="summary-card low">
+      <div class="num">3</div>
+      <div class="label">Low</div>
+    </div>
+    <div class="summary-card info">
+      <div class="num">2</div>
+      <div class="label">Info</div>
+    </div>
+    <div class="summary-card pass">
+      <div class="num">9</div>
+      <div class="label">통과 항목</div>
+    </div>
+  </div>
+
+  <!-- ── Overall Verdict ── -->
+  <div class="verdict">
+    <div class="verdict-icon">⚠️</div>
+    <div>
+      <h2>전반적 평가: 주의 필요 (Medium Risk)</h2>
+      <p>
+        chatbot.js는 XSS 방어를 위한 <code>escapeHtml</code> 함수, Shadow DOM 격리,
+        <code>textContent</code> 기반 사용자 입력 렌더링 등 기본적인 보안 관행을 잘 따르고 있습니다.
+        그러나 <strong>LLM 응답을 innerHTML로 직접 렌더링하는 경로</strong>와
+        <strong>외부 URL에 대한 검증 부재</strong>, <strong>입력 길이 제한 미적용</strong> 등
+        실제 공격으로 이어질 수 있는 취약점이 발견되었습니다.
+        High 1건을 포함한 총 7건의 보안 이슈를 조치하면 프로덕션 배포에 적합한 수준이 됩니다.
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Findings ── -->
+  <h2 class="section-title"><span class="icon">🔴</span> 발견된 취약점 (7건)</h2>
+  <div class="findings">
+
+    <!-- F-01 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-high">HIGH</span>
+        <div>
+          <h3>F-01 · LLM 응답을 innerHTML로 직접 렌더링 (XSS 위험)</h3>
+          <div class="desc">parseMarkdown의 결과물이 innerHTML에 주입되어, 서버 측 응답 조작 시 XSS로 이어질 수 있음</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:668</span></div>
+        </div>
+        <div>
+          <div class="field-label">취약 코드</div>
+<pre><span class="comment">// 스트리밍 토큰마다 innerHTML을 갱신</span>
+assistantText += event.content;
+<span class="tag-hl">assistantBubble.innerHTML = parseMarkdown(assistantText);</span></pre>
+        </div>
+        <div>
+          <div class="field-label">공격 시나리오</div>
+          <div class="field-value">
+            API 서버가 침해되거나 중간자 공격(MITM)이 발생한 경우, SSE 스트림에 악의적인 HTML을 삽입할 수 있습니다.
+            <code>escapeHtml</code>이 호출되지만 <strong>싱글 쿼트(<code>'</code>)가 이스케이프되지 않으며</strong>,
+            마크다운 파서의 URL 정규식 <code>[^)]+?</code>이 인코딩된 페이로드를 통과시킬 수 있습니다.
+            예: <code>![x](https://x.com/x" onerror="alert(1))</code> 형태의 페이로드.
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="vuln-box">
+            <div class="box-title">⚠ 현재 코드 문제</div>
+            <div class="field-value">
+              • escapeHtml이 <code>'</code> 미이스케이프<br>
+              • img/a 태그 생성 시 URL을 &lt;속성값&gt;에 직접 삽입<br>
+              • innerHTML 재렌더링 시 이전 sanitize 결과 보장 없음
+            </div>
+          </div>
+          <div class="fix-box">
+            <div class="box-title">✅ 권고 조치</div>
+            <div class="field-value">
+              • escapeHtml에 <code>'</code> → <code>&#39;</code> 추가<br>
+              • DOMPurify 적용 또는 DOM API 기반 렌더러로 교체<br>
+              • img src/alt를 setAttribute로 분리 설정
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">수정 예시</div>
+<pre><span class="comment">// 1) escapeHtml에 싱글 쿼트 추가</span>
+<span class="keyword">function</span> <span class="good">escapeHtml</span>(text) {
+  <span class="keyword">return</span> text
+    .replace(/&amp;/g, <span class="string">"&amp;amp;"</span>)
+    .replace(/&lt;/g,  <span class="string">"&amp;lt;"</span>)
+    .replace(/&gt;/g,  <span class="string">"&amp;gt;"</span>)
+    .replace(/"/g,   <span class="string">"&amp;quot;"</span>)
+    .replace(/'/g,   <span class="string">"&amp;#39;"</span>);  <span class="comment">// 추가</span>
+}
+
+<span class="comment">// 2) 이미지는 DOM API로 직접 생성 (innerHTML 우회)</span>
+<span class="keyword">function</span> <span class="good">createSafeImg</span>(src, alt) {
+  <span class="keyword">const</span> img = document.createElement(<span class="string">"img"</span>);
+  img.setAttribute(<span class="string">"src"</span>, src);   <span class="comment">// 속성별 설정</span>
+  img.setAttribute(<span class="string">"alt"</span>, alt);
+  img.style.maxWidth = <span class="string">"100%"</span>;
+  <span class="keyword">return</span> img.outerHTML;
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-02 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-medium">MEDIUM</span>
+        <div>
+          <h3>F-02 · button_icon_url — 임의 외부 도메인 이미지 로드 허용</h3>
+          <div class="desc">서버가 반환하는 아이콘 URL에 대한 도메인 검증이 없어 SSRF 프록시 또는 트래킹 픽셀에 악용 가능</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:388–405</span></div>
+        </div>
+        <div>
+          <div class="field-label">취약 코드</div>
+<pre><span class="keyword">if</span> (config.button_icon_url) {
+  <span class="keyword">const</span> iconUrl = config.button_icon_url.startsWith(<span class="string">"http"</span>)
+    ? config.button_icon_url          <span class="comment">// ← 모든 외부 URL 허용</span>
+    : (() => { ... })();
+  img.src = iconUrl;                  <span class="tag-hl">// 프로토콜·도메인 검증 없음</span>
+}</pre>
+        </div>
+        <div>
+          <div class="field-label">위험 시나리오</div>
+          <div class="field-value">
+            악의적인 서버가 <code>button_icon_url</code>을 공격자 서버로 설정하면,
+            위젯이 임베드된 모든 페이지에서 공격자 서버로 GET 요청이 발생합니다(IP 수집, 트래킹).
+            또한 내부망 URL을 지정하면 브라우저를 SSRF 프록시로 활용할 수 있습니다.
+          </div>
+        </div>
+        <div>
+          <div class="field-label">권고 수정</div>
+<pre><span class="keyword">function</span> <span class="good">isSafeIconUrl</span>(url, apiUrl) {
+  <span class="keyword">try</span> {
+    <span class="keyword">const</span> u = <span class="keyword">new</span> URL(url);
+    <span class="keyword">const</span> apiOrigin = <span class="keyword">new</span> URL(apiUrl).origin;
+    <span class="comment">// 같은 origin 또는 https 한정 허용 (필요 시 allowlist 추가)</span>
+    <span class="keyword">return</span> u.protocol === <span class="string">"https:"</span> &amp;&amp; u.origin === apiOrigin;
+  } <span class="keyword">catch</span> { <span class="keyword">return false</span>; }
+}
+
+<span class="keyword">if</span> (config.button_icon_url &amp;&amp; <span class="good">isSafeIconUrl</span>(config.button_icon_url, API_URL)) {
+  img.src = config.button_icon_url;
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-03 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-medium">MEDIUM</span>
+        <div>
+          <h3>F-03 · 입력 길이 제한 미적용 (DoS / 과도한 API 비용)</h3>
+          <div class="desc">입력 필드에 maxlength 없음 — 무제한 길이의 메시지를 서버로 전송 가능</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:342 (HTML)</span> · <span class="tag">chatbot.js:594 (sendMessage)</span></div>
+        </div>
+        <div>
+          <div class="field-label">현재 코드</div>
+<pre><span class="comment">&lt;!-- maxlength 속성 없음 --&gt;</span>
+&lt;input type=<span class="string">"text"</span> id=<span class="string">"msg-input"</span> placeholder=<span class="string">"메시지를 입력하세요..."</span> autocomplete=<span class="string">"off"</span> /&gt;
+
+<span class="comment">// sendMessage — 길이 검사 없음</span>
+<span class="keyword">const</span> text = msgInput.value.trim();
+<span class="keyword">if</span> (!text || isStreaming) <span class="keyword">return</span>;</pre>
+        </div>
+        <div class="two-col">
+          <div class="vuln-box">
+            <div class="box-title">⚠ 위험</div>
+            <div class="field-value">
+              수만 자 이상의 텍스트 전송 시<br>
+              • LLM API 토큰 비용 급증<br>
+              • 서버 처리 부하 (DoS 유발 가능)
+            </div>
+          </div>
+          <div class="fix-box">
+            <div class="box-title">✅ 권고</div>
+            <div class="field-value">
+              • input에 <code>maxlength="2000"</code> 추가<br>
+              • sendMessage에서도 길이 확인<br>
+              • 초과 시 UI 오류 메시지 표시
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="field-label">수정 예시</div>
+<pre><span class="comment">&lt;!-- HTML --&gt;</span>
+&lt;input type=<span class="string">"text"</span> id=<span class="string">"msg-input"</span> <span class="good">maxlength="2000"</span> ... /&gt;
+
+<span class="comment">// sendMessage</span>
+<span class="keyword">const</span> MAX_MSG_LEN = 2000;
+<span class="keyword">const</span> text = msgInput.value.trim();
+<span class="keyword">if</span> (!text || isStreaming) <span class="keyword">return</span>;
+<span class="keyword">if</span> (text.length > MAX_MSG_LEN) {
+  showError(<span class="string">`메시지는 ${MAX_MSG_LEN}자 이하로 입력해 주세요.`</span>);
+  <span class="keyword">return</span>;
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-04 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-medium">MEDIUM</span>
+        <div>
+          <h3>F-04 · API_URL 검증 없음 — 스크립트 설정을 통한 데이터 탈취 가능</h3>
+          <div class="desc">window.RagChatConfig.apiUrl을 임의 URL로 설정하면 사용자 메시지가 외부 서버로 전송됨</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:17</span></div>
+        </div>
+        <div>
+          <div class="field-label">취약 코드</div>
+<pre><span class="keyword">const</span> API_URL = cfg.apiUrl || <span class="string">"/rag/api/v1/chat"</span>;
+<span class="comment">// 프로토콜·호스트 검증 없음 — 공격자가 페이지를 XSS로 제어하거나</span>
+<span class="comment">// 파트너사 임베드 환경에서 잘못된 URL을 주입할 수 있음</span></pre>
+        </div>
+        <div>
+          <div class="field-label">권고 수정</div>
+<pre><span class="keyword">function</span> <span class="good">sanitizeApiUrl</span>(url) {
+  <span class="keyword">if</span> (!url) <span class="keyword">return</span> <span class="string">"/rag/api/v1/chat"</span>;
+  <span class="keyword">try</span> {
+    <span class="keyword">const</span> u = <span class="keyword">new</span> URL(url, location.href);
+    <span class="keyword">if</span> (u.protocol !== <span class="string">"https:"</span> &amp;&amp; u.protocol !== <span class="string">"http:"</span>)
+      <span class="keyword">throw new</span> Error(<span class="string">"invalid protocol"</span>);
+    <span class="keyword">return</span> u.href;
+  } <span class="keyword">catch</span> {
+    console.warn(<span class="string">"[RagChat] 잘못된 apiUrl — 기본값 사용"</span>);
+    <span class="keyword">return</span> <span class="string">"/rag/api/v1/chat"</span>;
+  }
+}
+<span class="keyword">const</span> API_URL = <span class="good">sanitizeApiUrl</span>(cfg.apiUrl);</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-05 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-low">LOW</span>
+        <div>
+          <h3>F-05 · 클라이언트 측 Rate Limiting 미적용</h3>
+          <div class="desc">isStreaming 플래그만으로는 자동화 도구에 의한 고속 메시지 전송을 막을 수 없음</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">설명</div>
+          <div class="field-value">
+            현재 코드는 스트리밍 중 중복 전송을 막는 <code>isStreaming</code> 플래그만 존재합니다.
+            이전 응답이 완료되면 즉시 다음 요청을 보낼 수 있어, 자동화 스크립트가 위젯을 통해
+            API 서버에 과부하를 줄 수 있습니다. 서버 측 rate limiting이 있어야 하지만,
+            위젯도 최소 클라이언트 쿨다운을 구현하는 것이 좋습니다.
+          </div>
+        </div>
+        <div>
+          <div class="field-label">권고 수정</div>
+<pre><span class="keyword">let</span> lastSentAt = 0;
+<span class="keyword">const</span> MIN_SEND_INTERVAL_MS = 500;  <span class="comment">// 0.5초 쿨다운</span>
+
+<span class="keyword">async function</span> sendMessage() {
+  <span class="keyword">const</span> now = Date.now();
+  <span class="keyword">if</span> (now - lastSentAt &lt; MIN_SEND_INTERVAL_MS) <span class="keyword">return</span>;
+  lastSentAt = now;
+  <span class="comment">// ... 기존 로직</span>
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-06 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-low">LOW</span>
+        <div>
+          <h3>F-06 · session_id 미검증 — SSE 응답 조작 가능성</h3>
+          <div class="desc">서버로부터 받은 session_id를 형식 검증 없이 그대로 저장하고 이후 요청에 사용</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:651</span></div>
+        </div>
+        <div>
+          <div class="field-label">현재 코드</div>
+<pre><span class="keyword">if</span> (event.type === <span class="string">"session"</span>) {
+  sessionId = event.session_id;  <span class="comment">// 형식 검증 없이 그대로 저장</span>
+}</pre>
+        </div>
+        <div>
+          <div class="field-label">권고 수정</div>
+<pre><span class="keyword">const</span> SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+
+<span class="keyword">if</span> (event.type === <span class="string">"session"</span>) {
+  <span class="keyword">const</span> sid = event.session_id;
+  <span class="keyword">if</span> (<span class="keyword">typeof</span> sid === <span class="string">"string"</span> &amp;&amp; SESSION_ID_RE.test(sid)) {
+    sessionId = sid;
+  } <span class="keyword">else</span> {
+    console.warn(<span class="string">"[RagChat] 비정상 session_id 수신 — 무시"</span>);
+  }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-07 -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-low">LOW</span>
+        <div>
+          <h3>F-07 · document 레벨 이벤트 리스너 — 호스트 페이지 간섭 가능성</h3>
+          <div class="desc">Shadow DOM 밖의 document에 keydown/click 리스너를 등록해 호스트 이벤트 흐름에 영향을 줄 수 있음</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:708–715</span></div>
+        </div>
+        <div>
+          <div class="field-label">현재 코드</div>
+<pre><span class="comment">// Shadow DOM 밖 document에 직접 등록</span>
+document.addEventListener(<span class="string">"click"</span>, (e) => {
+  <span class="keyword">if</span> (isOpen &amp;&amp; !host.contains(e.target)) closeWidget();
+});
+document.addEventListener(<span class="string">"keydown"</span>, (e) => {
+  <span class="keyword">if</span> (e.key === <span class="string">"Escape"</span> &amp;&amp; isOpen) closeWidget();
+});</pre>
+        </div>
+        <div>
+          <div class="field-label">설명 및 권고</div>
+          <div class="field-value">
+            Escape 키 리스너는 호스트 페이지의 모달이나 다이얼로그 닫기 동작과 충돌할 수 있습니다.
+            <code>e.stopPropagation()</code> 없이 등록하면 호스트의 핸들러도 실행됩니다.
+            위젯이 열린 상태에서만 동작하므로 실제 공격 위험도는 낮지만,
+            <code>{ passive: true }</code> 옵션 적용 및 컴포넌트 해제 시 removeEventListener 처리를 권고합니다.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-08 INFO -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-info">INFO</span>
+        <div>
+          <h3>F-08 · escapeHtml — 싱글 쿼트 미이스케이프</h3>
+          <div class="desc">현재 구조에서는 직접 취약점이 아니지만, 추후 코드 변경 시 attribute injection 가능성 존재</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">취약 위치</div>
+          <div class="field-value"><span class="tag">chatbot.js:459–465</span></div>
+        </div>
+        <div>
+          <div class="field-label">현재 코드</div>
+<pre><span class="keyword">function</span> escapeHtml(text) {
+  <span class="keyword">return</span> text
+    .replace(/&amp;/g, <span class="string">"&amp;amp;"</span>)
+    .replace(/&lt;/g, <span class="string">"&amp;lt;"</span>)
+    .replace(/&gt;/g, <span class="string">"&amp;gt;"</span>)
+    .replace(/"/g, <span class="string">"&amp;quot;"</span>);
+    <span class="tag-hl">// ' 미이스케이프</span>
+}</pre>
+        </div>
+        <div>
+          <div class="field-label">권고</div>
+          <div class="field-value">
+            <code>.replace(/'/g, "&#39;")</code> 한 줄을 추가하여 방어 깊이를 높입니다.
+            현재 parseMarkdown의 속성값은 모두 이중 쿼트를 사용하므로 즉각적인 위험은 없습니다.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- F-09 INFO -->
+    <div class="finding">
+      <div class="finding-header">
+        <span class="severity-badge sev-info">INFO</span>
+        <div>
+          <h3>F-09 · API Key가 HTTP 요청 헤더에 평문 전송</h3>
+          <div class="desc">X-API-Key 헤더가 브라우저 개발도구에서 누구나 확인 가능 — 클라이언트 위젯의 구조적 한계</div>
+        </div>
+      </div>
+      <hr class="divider" />
+      <div class="finding-body">
+        <div>
+          <div class="field-label">설명</div>
+          <div class="field-value">
+            위젯 특성상 API Key는 브라우저에 노출될 수밖에 없습니다.
+            이를 완화하려면 서버 측에서 ① API Key를 테넌트 식별에만 사용하고
+            ② 도메인 화이트리스트 검증을 강제하며 ③ Key를 주기적으로 로테이션하는 정책이 필요합니다.
+            현재 <code>domain_validation.py</code>가 존재하므로 이 경로를 유지·강화하는 것을 권고합니다.
+          </div>
+        </div>
+        <div>
+          <div class="field-label">권고</div>
+          <div class="field-value">
+            서버 측 도메인 검증(<code>Referer</code> / <code>Origin</code> 헤더 검사)을
+            반드시 활성화하고, 위젯 Key와 관리자 Key를 분리하여 권한 범위를 최소화합니다.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 통과 항목 ── -->
+  <h2 class="section-title"><span class="icon">✅</span> 잘 구현된 보안 항목 (9건)</h2>
+  <div class="pass-grid">
+
+    <div class="pass-item">
+      <div class="pass-icon">🛡️</div>
+      <div>
+        <h4>Shadow DOM 스타일 격리</h4>
+        <p><code>attachShadow({ mode: "closed" })</code>로 호스트 페이지의 CSS와 완전히 격리되어 있습니다.</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">🔒</div>
+      <div>
+        <h4>사용자 메시지 — textContent 사용</h4>
+        <p><code>appendMessage</code>에서 <code>bubble.textContent = text</code>를 사용해 사용자 입력이 HTML로 파싱되지 않습니다. (<span class="tag">line:517</span>)</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">🔒</div>
+      <div>
+        <h4>설정값 — textContent 사용</h4>
+        <p>title, greeting, quick_replies, clarification 질문 모두 <code>textContent</code>로 렌더링하여 XSS를 방지합니다.</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">🌐</div>
+      <div>
+        <h4>링크/이미지 — https? 프로토콜 한정</h4>
+        <p>마크다운 파서의 URL 정규식이 <code>https?://</code>만 허용해 <code>javascript:</code> URL을 차단합니다. (<span class="tag">line:479,483</span>)</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">🔗</div>
+      <div>
+        <h4>외부 링크 — rel="noopener noreferrer"</h4>
+        <p>모든 외부 링크에 <code>target="_blank" rel="noopener noreferrer"</code>가 적용되어 탭내빙(tabnapping) 공격을 방지합니다.</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">⛔</div>
+      <div>
+        <h4>동시 요청 방지</h4>
+        <p><code>isStreaming</code> 플래그와 <code>AbortController</code>로 중복 요청을 방지합니다. (<span class="tag">line:604</span>)</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">📋</div>
+      <div>
+        <h4>HTML 이스케이프 함수 존재</h4>
+        <p><code>escapeHtml</code>이 parseMarkdown 진입 전에 반드시 호출되어 원시 HTML 주입을 1차 차단합니다. (<span class="tag">line:459</span>)</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">💬</div>
+      <div>
+        <h4>에러 메시지 — 민감 정보 미노출</h4>
+        <p>서버 오류 시 HTTP 상태 코드만 로그에 기록되고, UI에는 일반 메시지만 표시됩니다. (<span class="tag">line:678</span>)</p>
+      </div>
+    </div>
+
+    <div class="pass-item">
+      <div class="pass-icon">🔑</div>
+      <div>
+        <h4>API Key 누락 시 즉시 중단</h4>
+        <p>API Key가 설정되지 않으면 위젯 초기화 자체를 중단하여 미인증 요청을 원천 차단합니다. (<span class="tag">line:19-22</span>)</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 우선순위 조치 요약 ── -->
+  <h2 class="section-title"><span class="icon">📋</span> 조치 우선순위 요약</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>순위</th>
+        <th>ID</th>
+        <th>항목</th>
+        <th>심각도</th>
+        <th>예상 작업</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--high)"></span>1</td>
+        <td><span class="tag">F-01</span></td>
+        <td>innerHTML 렌더링 + escapeHtml 보강</td>
+        <td style="color:var(--high)">HIGH</td>
+        <td>escapeHtml에 ' 추가 + img/a DOM API 교체 (1~2시간)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--medium)"></span>2</td>
+        <td><span class="tag">F-03</span></td>
+        <td>입력 길이 제한 추가</td>
+        <td style="color:var(--medium)">MEDIUM</td>
+        <td>maxlength 속성 + sendMessage 조건 (30분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--medium)"></span>3</td>
+        <td><span class="tag">F-02</span></td>
+        <td>button_icon_url 도메인 검증</td>
+        <td style="color:var(--medium)">MEDIUM</td>
+        <td>isSafeIconUrl 함수 추가 (30분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--medium)"></span>4</td>
+        <td><span class="tag">F-04</span></td>
+        <td>API_URL 프로토콜 검증</td>
+        <td style="color:var(--medium)">MEDIUM</td>
+        <td>sanitizeApiUrl 함수 추가 (30분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--low)"></span>5</td>
+        <td><span class="tag">F-06</span></td>
+        <td>session_id 형식 검증</td>
+        <td style="color:var(--low)">LOW</td>
+        <td>정규식 검사 추가 (15분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--low)"></span>6</td>
+        <td><span class="tag">F-05</span></td>
+        <td>클라이언트 Rate Limiting</td>
+        <td style="color:var(--low)">LOW</td>
+        <td>쿨다운 변수 추가 (15분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--info)"></span>7</td>
+        <td><span class="tag">F-08</span></td>
+        <td>escapeHtml 싱글 쿼트 추가</td>
+        <td style="color:var(--info)">INFO</td>
+        <td>1줄 추가 (5분)</td>
+      </tr>
+      <tr>
+        <td><span class="priority-dot" style="background:var(--info)"></span>8</td>
+        <td><span class="tag">F-09</span></td>
+        <td>서버 측 도메인 화이트리스트 강화</td>
+        <td style="color:var(--info)">INFO</td>
+        <td>백엔드 domain_validation.py 점검 (별도)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer>
+    <span>📄 RAG Chatbot Platform — chatbot.js 보안 점검 보고서</span>
+    <span>점검일: 2026-04-21 · 점검 대상: apps/widget/chatbot.js (716 lines)</span>
+  </footer>
+
+</div>
+</body>
+</html>
