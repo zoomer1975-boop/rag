@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+.next/
+**/.next/
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# Security reports (generated artifacts)
+*-report.html
+security_audit_report.html
+chatbot-security-report.html
+
+# Test artifacts
+test-results/
+playwright-report/
+e2e/screenshots/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

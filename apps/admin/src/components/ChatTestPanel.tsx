@@ -112,6 +112,16 @@ export default function ChatTestPanel({ tenant }: Props) {
                 };
                 return next;
               });
+            } else if (event.type === "error") {
+              setMessages((prev) => {
+                const next = [...prev];
+                next[next.length - 1] = {
+                  ...next[next.length - 1],
+                  content: event.content || "LLM 응답 오류가 발생했습니다.",
+                  streaming: false,
+                };
+                return next;
+              });
             } else if (event.type === "done") {
               setMessages((prev) => {
                 const next = [...prev];

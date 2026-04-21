@@ -430,7 +430,7 @@ async def admin_chat_test(
     ]
 
     ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
-    ls_run_id = ls_logger.start_trace(
+    ls_run_id = await ls_logger.start_trace(
         run_name="admin_rag_chat_test",
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
     )
@@ -445,7 +445,7 @@ async def admin_chat_test(
         tenant_id=tenant.id,
         top_k=5,
     )
-    ls_logger.log_retrieval(
+    await ls_logger.log_retrieval(
         parent_run_id=ls_run_id,
         query=body.message,
         chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
@@ -510,12 +510,14 @@ async def _admin_chat_stream(
             full_response += token
             yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
     except Exception as exc:
-        ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
-        raise
+        await ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
+        yield f"data: {json.dumps({'type': 'error', 'content': f'LLM 오류: {exc}'})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
+        return
 
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
 
-    ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
+    await ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     from app.db.session import AsyncSessionLocal
 
