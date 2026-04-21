@@ -15,6 +15,28 @@ ICONS_DIR = pathlib.Path(__file__).parent.parent.parent / "static" / "icons"
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 MAX_ICON_SIZE = 2 * 1024 * 1024  # 2MB
 
+# magic bytes → canonical extension mapping (client Content-Type cannot be trusted)
+_MAGIC_BYTES: list[tuple[bytes, str]] = [
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"\xff\xd8\xff", "jpg"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+    (b"RIFF", "webp"),  # WebP starts with RIFF....WEBP; verified below
+]
+
+
+def _detect_image_ext(data: bytes) -> str | None:
+    """Return canonical extension if magic bytes match a supported image, else None."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
 _DOMAIN_RE = re.compile(
     r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
     re.IGNORECASE,
@@ -264,12 +286,14 @@ async def upload_icon(
     if not tenant:
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
 
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="이미지 파일(PNG/JPG/GIF/WebP)만 업로드할 수 있습니다.")
-
     contents = await file.read()
     if len(contents) > MAX_ICON_SIZE:
         raise HTTPException(status_code=400, detail="파일 크기는 2MB를 초과할 수 없습니다.")
+
+    # magic bytes로 실제 이미지 형식 검증 (Content-Type은 클라이언트 제어이므로 신뢰 불가)
+    ext = _detect_image_ext(contents)
+    if ext is None:
+        raise HTTPException(status_code=400, detail="이미지 파일(PNG/JPG/GIF/WebP)만 업로드할 수 있습니다.")
 
     # 기존 아이콘 파일 삭제
     old_icon_url = tenant.widget_config.get("button_icon_url", "")
@@ -279,10 +303,7 @@ async def upload_icon(
         if old_path.exists():
             old_path.unlink()
 
-    # 새 파일 저장
-    ext = (file.filename or "image").rsplit(".", 1)[-1].lower()
-    if ext not in {"png", "jpg", "jpeg", "gif", "webp"}:
-        ext = "png"
+    # 새 파일 저장 (magic bytes에서 추출한 ext 사용)
     filename = f"tenant_{tenant_id}_{uuid.uuid4().hex}.{ext}"
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
     (ICONS_DIR / filename).write_bytes(contents)

@@ -1,6 +1,6 @@
 """분석 API — 테넌트별 통계"""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,8 +45,8 @@ async def get_stats(
 
 @router.get("/conversations")
 async def list_conversations(
-    limit: int = 20,
-    offset: int = 0,
+    limit: int = Query(20, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     tenant: Tenant = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
 ):
