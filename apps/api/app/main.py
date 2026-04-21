@@ -15,7 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.routers import admin, analytics, api_tools, auth, chat, ingest, tenants
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.routers import admin, analytics, api_tools, auth, boilerplate, chat, graph, ingest, tenants
 from app.scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
@@ -50,6 +51,13 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key", "X-Admin-Token"],
 )
 
+app.add_middleware(
+    RateLimitMiddleware,
+    redis_url=settings.redis_url,
+    limit=settings.rate_limit_requests,
+    window=settings.rate_limit_window,
+)
+
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(tenants.router)
@@ -57,6 +65,8 @@ app.include_router(api_tools.router)
 app.include_router(ingest.router)
 app.include_router(chat.router)
 app.include_router(analytics.router)
+app.include_router(boilerplate.router)
+app.include_router(graph.router)
 
 
 @app.get("/widget/{filename}")

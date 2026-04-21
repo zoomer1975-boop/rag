@@ -1,11 +1,14 @@
 """문서 인제스트 파이프라인 — 파싱 → 청킹 → 임베딩 → 저장"""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +17,7 @@ logger = logging.getLogger(__name__)
 from app.config import get_settings
 from app.models.chunk import Chunk
 from app.models.document import Document
+from app.services import boilerplate as boilerplate_svc
 from app.services.chunker import TextChunker
 from app.services.crawler import WebCrawler
 from app.services.embeddings import EmbeddingClient
@@ -30,16 +34,25 @@ class IngestService:
         chunker: TextChunker | None = None,
         parser: DocumentParser | None = None,
         crawler: WebCrawler | None = None,
+        graph_extractor: Any | None = None,
+        graph_store: Any | None = None,
     ) -> None:
         self._db = db
         self._embedding_client = embedding_client
         self._chunker = chunker or TextChunker()
         self._parser = parser or DocumentParser()
         self._crawler = crawler or WebCrawler()
+        self._graph_extractor = graph_extractor
+        self._graph_store = graph_store
 
     async def ingest_url(self, document: Document, crawl_full_site: bool = False) -> None:
         """URL을 크롤링하여 청킹 + 임베딩 후 저장합니다."""
         await self._set_status(document, "processing")
+        # 갱신 시 기존 청크 삭제
+        await self._db.execute(
+            delete(Chunk).where(Chunk.document_id == document.id)
+        )
+        await self._db.flush()
         try:
             if crawl_full_site:
                 pages = await self._crawler.crawl_site(document.source_url)
@@ -47,10 +60,19 @@ class IngestService:
                 page = await self._crawler.crawl_url(document.source_url)
                 pages = [page]
 
+            patterns = await boilerplate_svc.load_patterns(self._db, document.tenant_id)
+
             total_chunks = 0
             for page in pages:
+                content = boilerplate_svc.apply(page["content"], patterns)
+                if not content:
+                    logger.warning(
+                        "보일러플레이트 제거 후 본문이 비었습니다: doc_id=%d, url=%s",
+                        document.id,
+                        page.get("url"),
+                    )
                 chunks_data = self._chunker.split_with_metadata(
-                    page["content"],
+                    content,
                     source_url=page["url"],
                     title=page.get("title", ""),
                 )
@@ -66,8 +88,19 @@ class IngestService:
     async def ingest_file(self, document: Document) -> None:
         """업로드된 파일을 파싱하여 청킹 + 임베딩 후 저장합니다."""
         await self._set_status(document, "processing")
+        # 갱신 시 기존 청크 삭제
+        await self._db.execute(
+            delete(Chunk).where(Chunk.document_id == document.id)
+        )
+        await self._db.flush()
         try:
             text = self._parser.parse(document.file_path, document.source_type)
+            patterns = await boilerplate_svc.load_patterns(self._db, document.tenant_id)
+            text = boilerplate_svc.apply(text, patterns)
+            if not text:
+                logger.warning(
+                    "보일러플레이트 제거 후 본문이 비었습니다: doc_id=%d", document.id
+                )
             chunks_data = self._chunker.split_with_metadata(
                 text,
                 source_url=document.source_url,
@@ -128,6 +161,30 @@ class IngestService:
         ]
         self._db.add_all(chunks)
         await self._db.flush()
+
+        await self._extract_graph(tenant_id=document.tenant_id, chunks=chunks)
+
+    async def _extract_graph(self, tenant_id: int, chunks: list[Chunk]) -> None:
+        if self._graph_extractor is None or self._graph_store is None:
+            return
+
+        import asyncio
+
+        extractions = await asyncio.gather(
+            *[self._graph_extractor.extract(chunk.content) for chunk in chunks],
+            return_exceptions=True,
+        )
+
+        for chunk, extraction in zip(chunks, extractions):
+            if isinstance(extraction, Exception):
+                logger.warning("graph extraction failed for chunk %d: %s", chunk.id, extraction)
+                continue
+            if extraction.entities or getattr(extraction, "relationships", None):
+                await self._graph_store.upsert(
+                    tenant_id=tenant_id,
+                    chunk_id=chunk.id,
+                    extraction=extraction,
+                )
 
     async def _set_status(
         self,

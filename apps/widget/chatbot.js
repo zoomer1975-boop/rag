@@ -299,6 +299,27 @@
     }
     .qr-chip:hover { background: var(--accent, #6366f1); color: #fff; }
     .qr-chip:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .clarification-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .clar-chip {
+      font-size: 14px;
+      color: #e2e8f0;
+      background: rgba(168, 85, 247, 0.08);
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      border-radius: 14px;
+      padding: 8px 16px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+      line-height: 1.5;
+    }
+    .clar-chip:hover { background: rgba(168, 85, 247, 0.22); border-color: #a855f7; }
+    .clar-chip:disabled { opacity: 0.35; cursor: not-allowed; }
   `;
 
   // ─── HTML Structure ───────────────────────────────────────────────────────
@@ -514,6 +535,37 @@
     // sources display disabled
   }
 
+  function appendClarification(questions) {
+    const msgEl = document.createElement("div");
+    msgEl.className = "msg assistant";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = "더 정확한 답변을 위해 여쭤볼게요.";
+
+    const chips = document.createElement("div");
+    chips.className = "clarification-chips";
+    questions.forEach((q) => {
+      const btn = document.createElement("button");
+      btn.className = "clar-chip";
+      btn.textContent = q;
+      btn.type = "button";
+      btn.addEventListener("click", () => {
+        if (isStreaming) return;
+        chips.querySelectorAll(".clar-chip").forEach((c) => { c.disabled = true; });
+        msgInput.value = q;
+        sendBtn.disabled = false;
+        sendMessage();
+      });
+      chips.appendChild(btn);
+    });
+
+    bubble.appendChild(chips);
+    msgEl.appendChild(bubble);
+    messages.appendChild(msgEl);
+    scrollToBottom();
+  }
+
   function scrollToBottom() {
     messages.scrollTop = messages.scrollHeight;
   }
@@ -598,8 +650,10 @@
           if (event.type === "session") {
             sessionId = event.session_id;
           } else if (event.type === "sources") {
-            // Sources come after the assistant bubble is rendered
             requestAnimationFrame(() => appendSources(event.sources));
+          } else if (event.type === "clarification") {
+            typing.remove();
+            appendClarification(event.questions || []);
           } else if (event.type === "token") {
             if (!assistantBubble) {
               typing.remove();

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, HttpUrl
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -16,11 +16,15 @@ logger = logging.getLogger(__name__)
 from app.config import get_settings
 from app.db.session import get_db
 from app.middleware.auth import get_tenant
+from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.tenant import Tenant
 from app.services.document_search import build_document_search_filter
 from app.services.embeddings import EmbeddingClient, get_embedding_client
+from app.services.graph_extractor import GraphExtractor
+from app.services.graph_store import GraphStore
 from app.services.ingest import IngestService
+from app.services.llm import LLMClient, get_llm_client
 
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -56,6 +60,7 @@ async def ingest_url(
     tenant: Tenant = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
+    llm_client: LLMClient = Depends(get_llm_client),
 ):
     url_str = str(body.url)
     document = Document(
@@ -72,7 +77,7 @@ async def ingest_url(
     await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
 
     background_tasks.add_task(
-        _run_url_ingest, document.id, body.crawl_full_site, embedding_client
+        _run_url_ingest, document.id, body.crawl_full_site, embedding_client, llm_client
     )
     return document
 
@@ -84,6 +89,7 @@ async def ingest_file(
     tenant: Tenant = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
+    llm_client: LLMClient = Depends(get_llm_client),
 ):
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -118,7 +124,7 @@ async def ingest_file(
     await db.refresh(document)
     await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
 
-    background_tasks.add_task(_run_file_ingest, document.id, embedding_client)
+    background_tasks.add_task(_run_file_ingest, document.id, embedding_client, llm_client)
     return document
 
 
@@ -140,6 +146,54 @@ async def list_documents(
     return result.scalars().all()
 
 
+class ChunkResponse(BaseModel):
+    id: int
+    chunk_index: int
+    content: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChunkListResponse(BaseModel):
+    items: list[ChunkResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("/documents/{doc_id}/chunks", response_model=ChunkListResponse)
+async def list_document_chunks(
+    doc_id: int,
+    tenant: Tenant = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    doc = await db.get(Document, doc_id)
+    if not doc or doc.tenant_id != tenant.id:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+
+    total_result = await db.execute(
+        select(func.count()).select_from(Chunk).where(
+            Chunk.document_id == doc_id,
+            Chunk.tenant_id == tenant.id,
+        )
+    )
+    total = total_result.scalar_one()
+
+    items_result = await db.execute(
+        select(Chunk)
+        .where(Chunk.document_id == doc_id, Chunk.tenant_id == tenant.id)
+        .order_by(Chunk.chunk_index)
+        .limit(limit)
+        .offset(offset)
+    )
+    items = items_result.scalars().all()
+
+    return ChunkListResponse(items=list(items), total=total, limit=limit, offset=offset)
+
+
 class RefreshIntervalRequest(BaseModel):
     refresh_interval_hours: int
 
@@ -151,6 +205,7 @@ async def refresh_document(
     tenant: Tenant = Depends(get_tenant),
     db: AsyncSession = Depends(get_db),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
+    llm_client: LLMClient = Depends(get_llm_client),
 ):
     """URL 문서를 즉시 갱신한다."""
     doc = await db.get(Document, doc_id)
@@ -167,7 +222,7 @@ async def refresh_document(
     await db.commit()
     await db.refresh(doc)
 
-    background_tasks.add_task(_run_url_ingest, doc_id, False, embedding_client)
+    background_tasks.add_task(_run_url_ingest, doc_id, False, embedding_client, llm_client)
     return doc
 
 
@@ -212,7 +267,7 @@ async def delete_document(
 
 
 async def _run_url_ingest(
-    doc_id: int, crawl_full_site: bool, embedding_client: EmbeddingClient
+    doc_id: int, crawl_full_site: bool, embedding_client: EmbeddingClient, llm_client: LLMClient
 ) -> None:
     from app.db.session import AsyncSessionLocal
 
@@ -226,7 +281,14 @@ async def _run_url_ingest(
             # ingest_url 내부에서 db.commit()이 호출되면 document 객체가 expired 되므로
             # 미리 값을 읽어둔다
             interval = document.refresh_interval_hours
-            service = IngestService(db=db, embedding_client=embedding_client)
+            graph_extractor = GraphExtractor(llm_client=llm_client)
+            graph_store = GraphStore(db=db, embedding_client=embedding_client)
+            service = IngestService(
+                db=db,
+                embedding_client=embedding_client,
+                graph_extractor=graph_extractor,
+                graph_store=graph_store,
+            )
             await service.ingest_url(document, crawl_full_site=crawl_full_site)
             now = datetime.now(timezone.utc)
             next_refresh = (now + timedelta(hours=interval)) if interval > 0 else None
@@ -251,7 +313,7 @@ async def _run_url_ingest(
                 logger.exception("URL 인제스트 실패 상태 저장 실패: doc_id=%d", doc_id)
 
 
-async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> None:
+async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient, llm_client: LLMClient) -> None:
     from app.db.session import AsyncSessionLocal
 
     logger.info("파일 인제스트 시작: doc_id=%d", doc_id)
@@ -261,7 +323,14 @@ async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient) -> No
             logger.warning("파일 인제스트: doc_id=%d 문서 없음", doc_id)
             return
         try:
-            service = IngestService(db=db, embedding_client=embedding_client)
+            graph_extractor = GraphExtractor(llm_client=llm_client)
+            graph_store = GraphStore(db=db, embedding_client=embedding_client)
+            service = IngestService(
+                db=db,
+                embedding_client=embedding_client,
+                graph_extractor=graph_extractor,
+                graph_store=graph_store,
+            )
             await service.ingest_file(document)
             logger.info("파일 인제스트 완료: doc_id=%d", doc_id)
         except Exception as exc:

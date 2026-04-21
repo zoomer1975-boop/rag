@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # Jina Reader (URL 인제스트)
     jina_api_key: str = ""
 
+    # GraphRAG
+    graph_top_k_entities: int = 10
+    graph_top_k_relationships: int = 10
+    graph_neighbor_hops: int = 1
+    graph_extraction_max_gleaning: int = 1
+
     @property
     def supported_language_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",")]

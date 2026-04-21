@@ -38,6 +38,8 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # user | assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    message_type: Mapped[str] = mapped_column(String(32), nullable=False, default="text", server_default="text")  # text | clarification_request | clarification_answer
+    clarification_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
