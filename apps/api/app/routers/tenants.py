@@ -37,10 +37,8 @@ def _detect_image_ext(data: bytes) -> str | None:
         return "webp"
     return None
 
-_DOMAIN_RE = re.compile(
-    r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
-    re.IGNORECASE,
-)
+import logging
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,11 +48,20 @@ from app.middleware.auth import verify_admin
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.tenant import Tenant
+from app.models.tenant_api_tool import TenantApiTool
 from app.services.embeddings import get_embedding_client
 from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
-from app.services.llm import get_llm_client
+from app.services.llm import TextResult, get_llm_client
 from app.services.rag import RAGService
+from app.services.tool_executor import MAX_TOOL_CALLS_PER_CHAT, build_openai_tools, execute_tool
+
+logger = logging.getLogger(__name__)
+
+_DOMAIN_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$",
+    re.IGNORECASE,
+)
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["tenants"])
 
@@ -435,6 +442,23 @@ async def admin_chat_test(
         inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
     )
 
+    tools_result = await db.execute(
+        select(TenantApiTool).where(
+            TenantApiTool.tenant_id == tenant.id,
+            TenantApiTool.is_active == True,  # noqa: E712
+        )
+    )
+    active_tools = tools_result.scalars().all()
+    openai_tools = build_openai_tools(list(active_tools))
+    logger.info(
+        "[tool_calling] tenant_id=%d active_tools=%d openai_tools=%d names=%s",
+        tenant.id,
+        len(active_tools),
+        len(openai_tools),
+        [t["function"]["name"] for t in openai_tools],
+    )
+    tool_map = {t.name: t for t in active_tools}
+
     rag_service = RAGService(
         db=db,
         embedding_client=embedding_client,
@@ -459,6 +483,7 @@ async def admin_chat_test(
         lang_code=resolved_lang,
         policy=tenant.lang_policy,
         allowed_langs=tenant.allowed_lang_list,
+        has_tools=bool(openai_tools),
     )
     sources = rag_service.build_sources(retrieved_chunks)
 
@@ -479,6 +504,8 @@ async def admin_chat_test(
             session_id=session_id,
             ls_logger=ls_logger,
             ls_run_id=ls_run_id,
+            openai_tools=openai_tools,
+            tool_map=tool_map,
         ),
         media_type="text/event-stream",
         headers={
@@ -497,6 +524,8 @@ async def _admin_chat_stream(
     session_id: str,
     ls_logger: LangSmithLogger,
     ls_run_id: str | None,
+    openai_tools: list[dict] | None = None,
+    tool_map: dict[str, TenantApiTool] | None = None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -506,9 +535,73 @@ async def _admin_chat_stream(
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
     try:
-        async for token in llm_client.chat_stream(messages):
-            full_response += token
-            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        if openai_tools:
+            call_count = 0
+            current_messages = list(messages)
+            any_tool_called = False
+
+            while call_count < MAX_TOOL_CALLS_PER_CHAT:
+                result = await llm_client.chat_with_tools(
+                    messages=current_messages,
+                    tools=openai_tools,
+                )
+
+                if isinstance(result, TextResult):
+                    if any_tool_called:
+                        words = result.content.split(" ")
+                        for i, word in enumerate(words):
+                            chunk = word + (" " if i < len(words) - 1 else "")
+                            full_response += chunk
+                            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                    else:
+                        async for token in llm_client.chat_stream(current_messages):
+                            full_response += token
+                            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                    break
+
+                any_tool_called = True
+                current_messages.append(result.assistant_message)
+
+                for tc in result.tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        arguments = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+
+                    yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name, 'arguments': arguments})}\n\n"
+
+                    tool_instance = (tool_map or {}).get(tool_name)
+                    if not tool_instance:
+                        tool_result_content = f"[Error] Unknown tool: {tool_name}"
+                        yield f"data: {json.dumps({'type': 'tool_error', 'name': tool_name, 'error': 'Unknown tool'})}\n\n"
+                    else:
+                        try:
+                            tool_result_content = await execute_tool(tool_instance, arguments)
+                            preview = tool_result_content[:200]
+                            yield f"data: {json.dumps({'type': 'tool_result', 'name': tool_name, 'success': True, 'preview': preview})}\n\n"
+                        except Exception as e:
+                            tool_result_content = f"[Error] {e}"
+                            logger.warning("tool '%s' 실행 실패: %s", tool_name, e)
+                            yield f"data: {json.dumps({'type': 'tool_error', 'name': tool_name, 'error': str(e)})}\n\n"
+
+                    current_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_result_content,
+                    })
+
+                call_count += 1
+            else:
+                logger.warning("tool calling 최대 횟수(%d) 초과, 강제 종료", MAX_TOOL_CALLS_PER_CHAT)
+                full_response = await llm_client.chat(messages=current_messages)
+                yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
+
+        else:
+            async for token in llm_client.chat_stream(messages):
+                full_response += token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
     except Exception as exc:
         await ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
         yield f"data: {json.dumps({'type': 'error', 'content': f'LLM 오류: {exc}'})}\n\n"
