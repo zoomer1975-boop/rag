@@ -59,14 +59,16 @@ export async function POST(req: Request) {
   const inputPass = body.password ?? "";
 
   // 1. 백엔드 /auth/login 호출
+  // H-6: nginx 가 설정한 X-Real-IP 만 신뢰하여 전달합니다.
+  // 클라이언트가 조작할 수 있는 X-Forwarded-For 는 전달하지 않습니다.
+  const realIp = req.headers.get("x-real-ip") ?? "127.0.0.1";
+
   try {
     const response = await fetch(`${apiBaseUrl}/auth/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Forwarded-For": req.headers.get("x-forwarded-for") ||
-                           req.headers.get("x-real-ip") ||
-                           "127.0.0.1",
+        "X-Real-IP": realIp,
       },
       body: JSON.stringify({
         username: inputUser,

@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ragpass}
       POSTGRES_DB: ${POSTGRES_DB:-ragdb}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,7 +21,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
 
   safeguard:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:v0.6.6.post1
     command: >
       --model kakaocorp/kanana-safeguard-prompt-2.1b
       --port 8001
@@ -76,7 +76,7 @@ services:
       - ./apps/widget:/app/static/widget:ro
       - icons_data:/app/static/icons
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
   admin:
     build:
