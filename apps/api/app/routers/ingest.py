@@ -25,6 +25,8 @@ from app.services.graph_extractor import GraphExtractor
 from app.services.graph_store import GraphStore
 from app.services.ingest import IngestService
 from app.services.llm import LLMClient, get_llm_client
+from app.services.security import SecurityError
+from app.services.security import file_guard, url_guard
 
 settings = get_settings()
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -63,6 +65,11 @@ async def ingest_url(
     llm_client: LLMClient = Depends(get_llm_client),
 ):
     url_str = str(body.url)
+    try:
+        url_guard.validate_scheme(url_str)
+    except SecurityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.threat.detail))
+
     document = Document(
         tenant_id=tenant.id,
         title=body.title or url_str,
@@ -99,6 +106,11 @@ async def ingest_file(
         )
 
     content = await file.read()
+    try:
+        file_guard.validate(content, ext)
+    except SecurityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.threat.detail))
+
     if len(content) > settings.max_upload_size_bytes:
         raise HTTPException(
             status_code=413,

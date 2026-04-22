@@ -22,6 +22,8 @@ from app.services.chunker import TextChunker
 from app.services.crawler import WebCrawler
 from app.services.embeddings import EmbeddingClient
 from app.services.parser import DocumentParser
+from app.services.security import chunk_sanitizer, content_inspector
+from app.services.security.types import Action
 
 settings = get_settings()
 
@@ -74,6 +76,11 @@ class IngestService:
                         document.id,
                         page.get("url"),
                     )
+                report = content_inspector.inspect(content, source_type="url")
+                if report.action == Action.BLOCK:
+                    raise ValueError(f"보안 위협으로 인제스트 차단: {report.threats[0].truncated_detail()}")
+                if report.action == Action.SANITIZE and report.sanitized_text is not None:
+                    content = report.sanitized_text
                 chunks_data = self._chunker.split_with_metadata(
                     content,
                     source_url=page["url"],
@@ -104,6 +111,11 @@ class IngestService:
                 logger.warning(
                     "보일러플레이트 제거 후 본문이 비었습니다: doc_id=%d", document.id
                 )
+            report = content_inspector.inspect(text, source_type=document.source_type)
+            if report.action == Action.BLOCK:
+                raise ValueError(f"보안 위협으로 인제스트 차단: {report.threats[0].truncated_detail()}")
+            if report.action == Action.SANITIZE and report.sanitized_text is not None:
+                text = report.sanitized_text
             chunks_data = self._chunker.split_with_metadata(
                 text,
                 source_url=document.source_url,
@@ -145,7 +157,12 @@ class IngestService:
         if not new_chunks_data:
             return
 
-        texts = [data["content"] for data, _ in new_chunks_data]
+        sanitized_chunks_data = []
+        for data, h in new_chunks_data:
+            clean_text, _ = chunk_sanitizer.sanitize(data["content"], data.get("index", 0))
+            sanitized_chunks_data.append(({**data, "content": clean_text}, h))
+
+        texts = [data["content"] for data, _ in sanitized_chunks_data]
         embeddings = await self._embedding_client.embed_batch(texts)
 
         chunks = [
@@ -160,7 +177,7 @@ class IngestService:
                     k: v for k, v in data.items() if k not in ("content", "index")
                 },
             )
-            for (data, h), embedding in zip(new_chunks_data, embeddings)
+            for (data, h), embedding in zip(sanitized_chunks_data, embeddings)
         ]
         self._db.add_all(chunks)
         await self._db.flush()
