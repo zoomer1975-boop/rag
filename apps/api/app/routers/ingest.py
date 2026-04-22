@@ -65,23 +65,28 @@ async def ingest_url(
     llm_client: LLMClient = Depends(get_llm_client),
 ):
     url_str = str(body.url)
+    block_reason: str | None = None
     try:
         url_guard.validate_scheme(url_str)
     except SecurityError as exc:
-        raise HTTPException(status_code=422, detail=str(exc.threat.detail))
+        block_reason = exc.threat.detail
 
     document = Document(
         tenant_id=tenant.id,
         title=body.title or url_str,
         source_type="url",
         source_url=url_str,
-        status="pending",
+        status="blocked" if block_reason else "pending",
+        error_message=block_reason,
         refresh_interval_hours=tenant.default_url_refresh_hours,
     )
     db.add(document)
     await db.flush()
     await db.refresh(document)
-    await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
+    await db.commit()
+
+    if block_reason:
+        return document
 
     background_tasks.add_task(
         _run_url_ingest, document.id, body.crawl_full_site, embedding_client, llm_client
@@ -106,35 +111,41 @@ async def ingest_file(
         )
 
     content = await file.read()
+    block_reason: str | None = None
     try:
         file_guard.validate(content, ext)
     except SecurityError as exc:
-        raise HTTPException(status_code=422, detail=str(exc.threat.detail))
+        block_reason = exc.threat.detail
 
-    if len(content) > settings.max_upload_size_bytes:
+    if not block_reason and len(content) > settings.max_upload_size_bytes:
         raise HTTPException(
             status_code=413,
             detail=f"파일 크기가 {settings.max_upload_size_mb}MB를 초과합니다.",
         )
 
-    # 파일 저장
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    filename = f"{uuid.uuid4()}{ext}"
-    file_path = os.path.join(settings.upload_dir, filename)
-    Path(file_path).write_bytes(content)
-
     source_type = ext.lstrip(".")
+    file_path: str | None = None
+    if not block_reason:
+        os.makedirs(settings.upload_dir, exist_ok=True)
+        filename = f"{uuid.uuid4()}{ext}"
+        file_path = os.path.join(settings.upload_dir, filename)
+        Path(file_path).write_bytes(content)
+
     document = Document(
         tenant_id=tenant.id,
-        title=file.filename or filename,
+        title=file.filename or (f"{uuid.uuid4()}{ext}"),
         source_type=source_type,
         file_path=file_path,
-        status="pending",
+        status="blocked" if block_reason else "pending",
+        error_message=block_reason,
     )
     db.add(document)
     await db.flush()
     await db.refresh(document)
     await db.commit()  # 백그라운드 태스크의 새 세션에서 document를 조회할 수 있도록 커밋
+
+    if block_reason:
+        return document
 
     background_tasks.add_task(_run_file_ingest, document.id, embedding_client, llm_client)
     return document
@@ -311,6 +322,17 @@ async def _run_url_ingest(
             )
             await db.commit()
             logger.info("URL 인제스트 완료: doc_id=%d", doc_id)
+        except SecurityError as exc:
+            logger.warning("URL 인제스트 보안 차단: doc_id=%d, %s", doc_id, exc.threat.detail)
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(status="blocked", error_message=exc.threat.detail)
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("URL 인제스트 차단 상태 저장 실패: doc_id=%d", doc_id)
         except Exception as exc:
             logger.exception("URL 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
             # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트
@@ -345,6 +367,17 @@ async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient, llm_c
             )
             await service.ingest_file(document)
             logger.info("파일 인제스트 완료: doc_id=%d", doc_id)
+        except SecurityError as exc:
+            logger.warning("파일 인제스트 보안 차단: doc_id=%d, %s", doc_id, exc.threat.detail)
+            try:
+                await db.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(status="blocked", error_message=exc.threat.detail)
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("파일 인제스트 차단 상태 저장 실패: doc_id=%d", doc_id)
         except Exception as exc:
             logger.exception("파일 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
             # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트

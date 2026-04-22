@@ -23,7 +23,7 @@ from app.services.crawler import WebCrawler
 from app.services.embeddings import EmbeddingClient
 from app.services.parser import DocumentParser
 from app.services.security import chunk_sanitizer, content_inspector
-from app.services.security.types import Action
+from app.services.security.types import Action, SecurityError
 
 settings = get_settings()
 
@@ -78,7 +78,7 @@ class IngestService:
                     )
                 report = content_inspector.inspect(content, source_type="url")
                 if report.action == Action.BLOCK:
-                    raise ValueError(f"보안 위협으로 인제스트 차단: {report.threats[0].truncated_detail()}")
+                    raise SecurityError(report.threats[0])
                 if report.action == Action.SANITIZE and report.sanitized_text is not None:
                     content = report.sanitized_text
                 chunks_data = self._chunker.split_with_metadata(
@@ -90,6 +90,8 @@ class IngestService:
                 total_chunks += len(chunks_data)
 
             await self._set_status(document, "completed", chunk_count=total_chunks)
+        except SecurityError:
+            raise
         except Exception as exc:
             logger.exception("URL 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
             await self._set_status(document, "failed", error=str(exc))
@@ -113,7 +115,7 @@ class IngestService:
                 )
             report = content_inspector.inspect(text, source_type=document.source_type)
             if report.action == Action.BLOCK:
-                raise ValueError(f"보안 위협으로 인제스트 차단: {report.threats[0].truncated_detail()}")
+                raise SecurityError(report.threats[0])
             if report.action == Action.SANITIZE and report.sanitized_text is not None:
                 text = report.sanitized_text
             chunks_data = self._chunker.split_with_metadata(
@@ -123,6 +125,8 @@ class IngestService:
             )
             await self._save_chunks(document, chunks_data)
             await self._set_status(document, "completed", chunk_count=len(chunks_data))
+        except SecurityError:
+            raise
         except Exception as exc:
             logger.exception("파일 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
             await self._set_status(document, "failed", error=str(exc))
