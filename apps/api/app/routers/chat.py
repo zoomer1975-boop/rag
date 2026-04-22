@@ -20,7 +20,9 @@ from app.models.tenant_api_tool import TenantApiTool
 import redis.asyncio as aioredis
 
 from app.services.clarifier import ClarifierService
+from app.services.conv_encryption import get_encryptor
 from app.services.domain_validation import is_origin_allowed
+from app.services.safeguard import SafeguardClient, get_safeguard_client
 from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.greeting_translator import GreetingTranslator
 from app.services.language import LanguageService
@@ -101,6 +103,7 @@ async def chat(
     db: AsyncSession = Depends(get_db),
     llm_client: LLMClient = Depends(get_llm_client),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
+    safeguard_client: SafeguardClient = Depends(get_safeguard_client),
     accept_language: str | None = Header(None, alias="Accept-Language"),
 ):
     """SSE 스트리밍 채팅 엔드포인트"""
@@ -111,6 +114,27 @@ async def chat(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="이 도메인은 위젯 사용이 허용되지 않았습니다.",
         )
+
+    # Safeguard 입력 검사 — 비용이 큰 RAG/LLM 호출 전에 빠르게 차단
+    if settings.safeguard_enabled:
+        sg_result = await safeguard_client.check(body.message)
+        if not sg_result.is_safe:
+            logger.warning(
+                "[safeguard] BLOCKED tenant_id=%d label=%r msg_preview=%r",
+                tenant.id,
+                sg_result.label,
+                body.message[:80],
+            )
+            blocked_session_id = body.session_id or str(uuid.uuid4())
+            return StreamingResponse(
+                _stream_blocked(blocked_session_id, settings.safeguard_blocked_message),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-Session-Id": blocked_session_id,
+                },
+            )
 
     lang_service = LanguageService(default_language=settings.default_language)
     detected_lang = lang_service.parse_accept_language(accept_language)
@@ -141,7 +165,11 @@ async def chat(
         await db.flush()
         await db.refresh(conversation)
 
-    # 대화 히스토리 로드
+    # DEK 조회 (없으면 자동 생성 후 DB에 저장)
+    enc = get_encryptor()
+    dek = await enc.get_or_create_dek(tenant_id=tenant.id, db=db)
+
+    # 대화 히스토리 로드 + 복호화
     history_result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation.id)
@@ -149,7 +177,13 @@ async def chat(
         .limit(20)
     )
     history_msgs = list(reversed(history_result.scalars().all()))
-    history = [{"role": m.role, "content": m.content} for m in history_msgs]
+    history = [
+        {
+            "role": m.role,
+            "content": enc.decrypt(m.content_enc, dek) if m.content_enc else (m.content or ""),
+        }
+        for m in history_msgs
+    ]
     clarification_round = sum(1 for m in history_msgs if m.message_type == "clarification_request")
 
     # LangSmith 로거 초기화 (키 없으면 no-op)
@@ -219,7 +253,8 @@ async def chat(
             user_msg = Message(
                 conversation_id=conversation.id,
                 role="user",
-                content=body.message,
+                content=None,
+                content_enc=enc.encrypt(message, dek),
             )
             db.add(user_msg)
             await db.commit()
@@ -228,6 +263,7 @@ async def chat(
                     session_id=session_id,
                     questions=clarification.questions,
                     conversation_id=conversation.id,
+                    enc_dek=dek,
                 ),
                 media_type="text/event-stream",
                 headers={
@@ -238,11 +274,12 @@ async def chat(
                 },
             )
 
-    # 사용자 메시지 저장
+    # 사용자 메시지 저장 (암호화)
     user_msg = Message(
         conversation_id=conversation.id,
         role="user",
-        content=body.message,
+        content=None,
+        content_enc=enc.encrypt(message, dek),
     )
     db.add(user_msg)
     await db.commit()
@@ -264,6 +301,7 @@ async def chat(
             ls_llm_run_id=ls_llm_run_id,
             openai_tools=openai_tools,
             tool_map=tool_map,
+            enc_dek=dek,
         ),
         media_type="text/event-stream",
         headers={
@@ -275,26 +313,42 @@ async def chat(
     )
 
 
+async def _stream_blocked(session_id: str, message: str) -> AsyncGenerator[str, None]:
+    """safeguard 차단 시 고정 메시지를 SSE 형식으로 반환한다."""
+    yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+    yield f"data: {json.dumps({'type': 'sources', 'sources': []})}\n\n"
+    yield f"data: {json.dumps({'type': 'token', 'content': message})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'content': message})}\n\n"
+
+
 async def _stream_clarification(
     session_id: str,
     questions: list[str],
     conversation_id: int,
+    enc_dek: bytes | None = None,
 ) -> AsyncGenerator[str, None]:
     yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
     yield f"data: {json.dumps({'type': 'clarification', 'questions': questions})}\n\n"
     yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
-    await _save_clarification_message(conversation_id, questions)
+    await _save_clarification_message(conversation_id, questions, enc_dek=enc_dek)
 
 
-async def _save_clarification_message(conversation_id: int, questions: list[str]) -> None:
+async def _save_clarification_message(
+    conversation_id: int, questions: list[str], enc_dek: bytes | None = None
+) -> None:
     from app.db.session import AsyncSessionLocal
+    from app.services.conv_encryption import get_encryptor
 
     try:
         async with AsyncSessionLocal() as db:
+            enc = get_encryptor()
+            plain = "\n".join(questions)
+            content_enc = enc.encrypt(plain, enc_dek) if enc_dek else None
             msg = Message(
                 conversation_id=conversation_id,
                 role="assistant",
-                content="\n".join(questions),
+                content=None if content_enc else plain,
+                content_enc=content_enc,
                 message_type="clarification_request",
                 clarification_meta={"questions": questions},
             )
@@ -315,6 +369,7 @@ async def _stream_response(
     ls_llm_run_id: str | None,
     openai_tools: list[dict] | None = None,
     tool_map: dict[str, TenantApiTool] | None = None,
+    enc_dek: bytes | None = None,
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -416,19 +471,23 @@ async def _stream_response(
     await ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     # 응답 저장 (백그라운드)
-    await _save_assistant_message(conversation_id, full_response, sources)
+    await _save_assistant_message(conversation_id, full_response, sources, enc_dek=enc_dek)
 
 
 async def _save_assistant_message(
-    conversation_id: int, content: str, sources: list[dict]
+    conversation_id: int, content: str, sources: list[dict], enc_dek: bytes | None = None
 ) -> None:
     from app.db.session import AsyncSessionLocal
+    from app.services.conv_encryption import get_encryptor
 
     async with AsyncSessionLocal() as db:
+        enc = get_encryptor()
+        content_enc = enc.encrypt(content, enc_dek) if enc_dek else None
         msg = Message(
             conversation_id=conversation_id,
             role="assistant",
-            content=content,
+            content=None if content_enc else content,
+            content_enc=content_enc,
             sources=sources,
         )
         db.add(msg)

@@ -134,7 +134,7 @@ class LLMClient:
             # tool_calls를 messages에 추가할 수 있는 dict 형태로 변환
             assistant_message: dict[str, Any] = {
                 "role": "assistant",
-                "content": msg.content,
+                "content": msg.content or "",
                 "tool_calls": [
                     {
                         "id": tc.id,

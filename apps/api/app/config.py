@@ -6,8 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 _INSECURE_DEFAULTS = {
-    "secret_key": "change-me-to-a-random-secret-key",
     "admin_password": "change-me",
+}
+
+_REQUIRED_SECRETS = {
+    "secret_key": "change-me-to-a-random-secret-key",
 }
 
 
@@ -62,6 +65,14 @@ class Settings(BaseSettings):
     graph_neighbor_hops: int = 1
     graph_extraction_max_gleaning: int = 1
 
+    # Safeguard (kanana-safeguard-prompt-2.1b via vLLM)
+    safeguard_enabled: bool = False
+    safeguard_base_url: str = "http://localhost:8001/v1"
+    safeguard_api_key: str = "none"
+    safeguard_model: str = "kakaocorp/kanana-safeguard-prompt-2.1b"
+    safeguard_blocked_message: str = "**UNSAFE** 죄송합니다. 해당 메시지는 처리할 수 없습니다."
+    safeguard_fail_open: bool = True
+
     @property
     def supported_language_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",")]
@@ -74,6 +85,16 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+
+    # 기본값 그대로면 서버 기동 차단 (암호화 키 파생에 직접 사용됨)
+    for field, insecure_val in _REQUIRED_SECRETS.items():
+        if getattr(settings, field) == insecure_val or not getattr(settings, field):
+            raise ValueError(
+                f"[설정 오류] {field.upper()} 가 기본값이거나 비어 있습니다. "
+                f".env 에서 반드시 변경하세요. "
+                f"생성 예시: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+
     for field, insecure_val in _INSECURE_DEFAULTS.items():
         if getattr(settings, field) == insecure_val:
             logger.warning(

@@ -54,6 +54,7 @@ from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import TextResult, get_llm_client
 from app.services.rag import RAGService
+from app.services.safeguard import SafeguardClient, get_safeguard_client
 from app.services.tool_executor import MAX_TOOL_CALLS_PER_CHAT, build_openai_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -390,6 +391,7 @@ async def admin_chat_test(
     db: AsyncSession = Depends(get_db),
     llm_client=Depends(get_llm_client),
     embedding_client=Depends(get_embedding_client),
+    safeguard_client: SafeguardClient = Depends(get_safeguard_client),
     _: None = Depends(verify_admin),
 ):
     """어드민 전용 채팅 테스트 — 도메인 검증 없이 RAG 채팅을 직접 실행."""
@@ -398,6 +400,27 @@ async def admin_chat_test(
         raise HTTPException(status_code=404, detail="테넌트를 찾을 수 없습니다.")
 
     settings = get_settings()
+
+    # Safeguard 입력 검사
+    if settings.safeguard_enabled:
+        sg_result = await safeguard_client.check(body.message)
+        if not sg_result.is_safe:
+            logger.warning(
+                "[safeguard] BLOCKED (admin-chat-test) tenant_id=%d label=%r msg_preview=%r",
+                tenant_id,
+                sg_result.label,
+                body.message[:80],
+            )
+            blocked_session_id = body.session_id or str(uuid.uuid4())
+            return StreamingResponse(
+                _admin_stream_blocked(blocked_session_id, settings.safeguard_blocked_message),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "X-Session-Id": blocked_session_id,
+                },
+            )
     lang_service = LanguageService(default_language=settings.default_language)
     resolved_lang = lang_service.resolve_lang(
         detected=settings.default_language,
@@ -514,6 +537,12 @@ async def admin_chat_test(
             "X-Session-Id": session_id,
         },
     )
+
+
+async def _admin_stream_blocked(session_id: str, blocked_message: str) -> AsyncGenerator[str, None]:
+    yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+    yield f"data: {json.dumps({'type': 'token', 'content': blocked_message})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'content': blocked_message})}\n\n"
 
 
 async def _admin_chat_stream(

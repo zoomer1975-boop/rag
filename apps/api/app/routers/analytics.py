@@ -10,6 +10,7 @@ from app.models.chunk import Chunk
 from app.models.conversation import Conversation, Message
 from app.models.document import Document
 from app.models.tenant import Tenant
+from app.services.conv_encryption import get_encryptor
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -102,10 +103,24 @@ async def get_conversation_messages(
         .order_by(Message.created_at.asc())
     )
     messages = msg_result.scalars().all()
+
+    enc = get_encryptor()
+    dek = await enc.get_dek_readonly(tenant.id, db)
+
+    def _decode(m: Message) -> str:
+        if m.content_enc and dek:
+            try:
+                text = enc.decrypt(m.content_enc, dek)
+            except Exception:
+                return ""
+        else:
+            text = m.content or ""
+        return text
+
     return [
         {
             "role": m.role,
-            "content": m.content,
+            "content": _decode(m),
             "sources": m.sources,
             "created_at": m.created_at.isoformat(),
         }
