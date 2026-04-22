@@ -39,7 +39,10 @@ class IngestService:
     ) -> None:
         self._db = db
         self._embedding_client = embedding_client
-        self._chunker = chunker or TextChunker()
+        self._chunker = chunker or TextChunker(
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
+        )
         self._parser = parser or DocumentParser()
         self._crawler = crawler or WebCrawler()
         self._graph_extractor = graph_extractor
@@ -196,6 +199,5 @@ class IngestService:
         document.status = status
         if chunk_count:
             document.chunk_count = chunk_count
-        if error:
-            document.error_message = error[:1000]
+        document.error_message = error[:1000] if error else None
         await self._db.commit()

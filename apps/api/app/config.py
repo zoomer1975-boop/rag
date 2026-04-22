@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     embedding_dimension: int = 768
 
+    # Chunking — tiktoken과 임베딩 모델 토크나이저 차이를 고려해 여유 있게 설정
+    chunk_size: int = 400
+    chunk_overlap: int = 50
+
     # Database
     database_url: str = "postgresql+asyncpg://raguser:ragpass@localhost:5432/ragdb"
 
