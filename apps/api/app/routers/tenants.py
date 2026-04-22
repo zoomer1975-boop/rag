@@ -529,6 +529,8 @@ async def admin_chat_test(
             ls_run_id=ls_run_id,
             openai_tools=openai_tools,
             tool_map=tool_map,
+            safeguard_client=safeguard_client if settings.safeguard_enabled else None,
+            safeguard_blocked_message=settings.safeguard_blocked_message,
         ),
         media_type="text/event-stream",
         headers={
@@ -555,6 +557,8 @@ async def _admin_chat_stream(
     ls_run_id: str | None,
     openai_tools: list[dict] | None = None,
     tool_map: dict[str, TenantApiTool] | None = None,
+    safeguard_client: SafeguardClient | None = None,
+    safeguard_blocked_message: str = "",
 ) -> AsyncGenerator[str, None]:
     full_response = ""
 
@@ -636,6 +640,19 @@ async def _admin_chat_stream(
         yield f"data: {json.dumps({'type': 'error', 'content': f'LLM 오류: {exc}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
         return
+
+    # LLM 출력 safeguard 검사
+    if safeguard_client is not None and full_response:
+        sg_out = await safeguard_client.check(full_response)
+        if not sg_out.is_safe:
+            logger.warning(
+                "[safeguard] OUTPUT BLOCKED (admin-chat-test) label=%r preview=%r",
+                sg_out.label,
+                full_response[:80],
+            )
+            yield f"data: {json.dumps({'type': 'output_blocked', 'content': safeguard_blocked_message})}\n\n"
+            await ls_logger.end_trace(run_id=ls_run_id, error="output_blocked")
+            return
 
     yield f"data: {json.dumps({'type': 'done', 'content': full_response})}\n\n"
 

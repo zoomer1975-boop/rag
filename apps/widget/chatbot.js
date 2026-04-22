@@ -730,6 +730,20 @@
             assistantText += event.content;
             assistantBubble.innerHTML = parseMarkdown(assistantText);
             scrollToBottom();
+          } else if (event.type === "output_blocked") {
+            // LLM 출력이 safeguard에 의해 차단됨 — 이미 스트리밍된 내용을 차단 메시지로 교체
+            if (!assistantBubble) {
+              typing.remove();
+              const msgEl = document.createElement("div");
+              msgEl.className = "msg assistant";
+              assistantBubble = document.createElement("div");
+              assistantBubble.className = "bubble";
+              msgEl.appendChild(assistantBubble);
+              messages.appendChild(msgEl);
+            }
+            assistantText = event.content || "";
+            assistantBubble.innerHTML = parseMarkdown(assistantText);
+            scrollToBottom();
           } else if (event.type === "done") {
             // Stream complete
           }
