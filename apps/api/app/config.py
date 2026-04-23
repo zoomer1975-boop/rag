@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     reranker_device: str = "cuda"
 
     # PII Masker (NER, 로컬 모델)
-    pii_ner_model: str = "snunlp/KR-ELECTRA-discriminator"
+    pii_ner_model: str = "monologg/koelectra-base-finetuned-naver-ner"
     pii_ner_device: str = "cpu"
 
     @property
