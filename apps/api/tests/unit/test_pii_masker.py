@@ -199,11 +199,21 @@ class TestTypeFiltering:
 
 
 # ─── NER (이름·주소) — pipeline mock ────────────────────────────────────────
+# monologg/koelectra-base-finetuned-naver-ner 모델은 HuggingFace pipeline을
+# aggregation_strategy 없이(비집계 모드) 사용한다.
+# 따라서 pipeline 반환값의 각 토큰은 "entity_group"(집계 모드)이 아닌
+# "entity" 키를 가지며, 값은 BIO 태깅 형식이다:
+#   B-<TAG> : 엔티티 시작 토큰 (Begin)
+#   I-<TAG> : 엔티티 연속 토큰 (Inside)
+# NAVER NER 태그 예시: PS(인물), LC(장소), OG(기관), DT(날짜) ...
+# _apply_ner()는 B- 토큰에서 새 스팬을 열고, I- 토큰에서 스팬을 이어붙인다.
+# 모든 mock은 이 형식을 따라야 한다 — entity_group 키를 쓰면 마스킹이 동작하지 않는다.
 
 
 class TestNERMasking:
     def test_person_name_masked(self, masker):
         mock_pipeline = MagicMock()
+        # B-PS: 인물(Person) 엔티티 시작 토큰 1개 (단일 토큰 이름)
         mock_pipeline.return_value = [
             {"entity": "B-PS", "word": "홍길동", "start": 5, "end": 8, "score": 0.99}
         ]
@@ -214,6 +224,9 @@ class TestNERMasking:
 
     def test_location_address_masked(self, masker):
         mock_pipeline = MagicMock()
+        # 장소명이 2개 토큰으로 분리됨: B-LC(시작) + I-LC(연속)
+        # 집계 모드였다면 entity_group="LC" 토큰 1개이지만,
+        # 비집계 모드에서는 서브워드/어절 단위로 나뉘어 각각 B-/I- 태그를 갖는다.
         mock_pipeline.return_value = [
             {"entity": "B-LC", "word": "서울시", "start": 3, "end": 6, "score": 0.97},
             {"entity": "I-LC", "word": "강남구", "start": 7, "end": 10, "score": 0.96},
@@ -224,6 +237,7 @@ class TestNERMasking:
 
     def test_ner_entity_type_name(self, masker):
         mock_pipeline = MagicMock()
+        # B-PS → _NER_TAG_MAP["PS"] → type="NAME" 으로 변환됨을 검증
         mock_pipeline.return_value = [
             {"entity": "B-PS", "word": "김철수", "start": 0, "end": 3, "score": 0.95}
         ]
@@ -233,6 +247,8 @@ class TestNERMasking:
 
     def test_ner_entity_original_preserved(self, masker):
         mock_pipeline = MagicMock()
+        # MaskResult.entities 각 항목의 .original 필드에 마스킹 전 원문이 보존되는지 확인
+        # (감사 로그, UI 표시 등에서 원문 복원이 필요한 경우를 위해)
         mock_pipeline.return_value = [
             {"entity": "B-PS", "word": "이영희", "start": 0, "end": 3, "score": 0.98}
         ]
@@ -243,6 +259,7 @@ class TestNERMasking:
 
     def test_ner_empty_result_no_mask(self, masker):
         mock_pipeline = MagicMock()
+        # pipeline이 빈 리스트를 반환하면 원문 그대로 통과해야 한다
         mock_pipeline.return_value = []
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("일반 질문입니다.")
@@ -253,6 +270,7 @@ class TestNERMasking:
         mock_pipeline.return_value = [
             {"entity": "B-PS", "word": "홍길동", "start": 0, "end": 3, "score": 0.99}
         ]
+        # enabled_types에 NAME이 없으면 이름이 감지되어도 마스킹하지 않아야 한다
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("홍길동입니다", enabled_types=["PHONE", "EMAIL"])
         assert "홍길동" in result.masked_text

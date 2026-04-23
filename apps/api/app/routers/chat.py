@@ -139,19 +139,30 @@ async def chat(
                 },
             )
 
-    # PII 마스킹 — safeguard 이후, 임베딩/LLM 이전
+    # ── PII 마스킹 ────────────────────────────────────────────────────────────
+    # safeguard 통과 직후, 임베딩 생성 및 LLM 호출 이전에 실행한다.
+    # 이 시점에 마스킹해야 원문이 벡터 DB나 LLM 프롬프트에 저장되지 않는다.
+    #
+    # pii_config: 테넌트 DB 컬럼(JSONB), 예) {"enabled": true, "types": ["NAME", "PHONE"]}
+    #   - enabled  : 마스킹 전체 on/off
+    #   - types    : 활성화할 PII 유형 목록 (None이면 전체 유형 마스킹)
+    # hasattr 가드는 구 버전 테넌트 객체에 pii_config 속성이 없는 경우를 방어한다.
     pii_cfg = tenant.pii_config if hasattr(tenant, "pii_config") else {}
+    # 로그: 어떤 PII 설정이 적용됐는지 확인 (운영 디버깅용)
     logger.info("PII config for tenant %s: %s", tenant.id, pii_cfg)
     if pii_cfg.get("enabled"):
         _pii_masker = PIIMasker()
         _mask_result = await _pii_masker.mask(
             body.message, enabled_types=pii_cfg.get("types")
         )
+        # 로그: 원문 vs 마스킹 결과 + 감지된 엔티티 목록 — 마스킹 누락 여부 사후 확인용
         logger.info("PII masking: original=%r masked=%r entities=%s", body.message, _mask_result.masked_text, _mask_result.entities)
         user_message = _mask_result.masked_text
     else:
+        # 로그: 마스킹이 비활성화된 테넌트임을 명시 — "마스킹이 왜 안 됐지?" 오해 방지
         logger.info("PII masking disabled for tenant %s", tenant.id)
         user_message = body.message
+    # 이후 모든 하위 호출(임베딩, RAG 검색, LLM, DB 저장)은 user_message를 사용한다.
 
     lang_service = LanguageService(default_language=settings.default_language)
     detected_lang = lang_service.parse_accept_language(accept_language)

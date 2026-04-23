@@ -1,10 +1,16 @@
 """관리자(최고관리자) 전용 라우터 - 부관리자 관리"""
 
-from datetime import datetime
+import asyncio
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Literal
 
+import httpx
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -13,6 +19,118 @@ from app.middleware.auth import verify_admin
 from app.models.sub_admin import SubAdmin, sub_admin_tenants
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
+
+
+# ─── System Health ────────────────────────────────────────────────────────────
+
+
+class ServiceStatus(BaseModel):
+    status: Literal["ok", "degraded", "down"]
+    latency_ms: float | None = None
+    message: str | None = None
+    enabled: bool = True
+
+
+class SystemHealthResponse(BaseModel):
+    postgresql: ServiceStatus
+    redis: ServiceStatus
+    llm: ServiceStatus
+    embedding: ServiceStatus
+    safeguard: ServiceStatus
+    ner: ServiceStatus
+    checked_at: str
+
+
+async def _check_postgresql(db: AsyncSession) -> ServiceStatus:
+    t0 = time.monotonic()
+    try:
+        await db.execute(text("SELECT 1"))
+        return ServiceStatus(status="ok", latency_ms=round((time.monotonic() - t0) * 1000, 1))
+    except Exception:
+        logger.exception("PostgreSQL health check failed")
+        return ServiceStatus(status="down", latency_ms=round((time.monotonic() - t0) * 1000, 1), message="연결 실패")
+
+
+async def _check_redis(redis_url: str) -> ServiceStatus:
+    t0 = time.monotonic()
+    client = aioredis.from_url(redis_url, socket_connect_timeout=3)
+    try:
+        await asyncio.wait_for(client.ping(), timeout=3)
+        return ServiceStatus(status="ok", latency_ms=round((time.monotonic() - t0) * 1000, 1))
+    except Exception:
+        logger.exception("Redis health check failed")
+        return ServiceStatus(status="down", latency_ms=round((time.monotonic() - t0) * 1000, 1), message="연결 실패")
+    finally:
+        await client.aclose()
+
+
+async def _check_http_models(base_url: str, api_key: str, label: str) -> ServiceStatus:
+    t0 = time.monotonic()
+    url = base_url.rstrip("/") + "/models"
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+        latency = round((time.monotonic() - t0) * 1000, 1)
+        if resp.status_code < 400:
+            return ServiceStatus(status="ok", latency_ms=latency)
+        return ServiceStatus(status="degraded", latency_ms=latency, message=f"HTTP {resp.status_code}")
+    except Exception:
+        logger.exception("HTTP model health check failed: %s", label)
+        return ServiceStatus(status="down", latency_ms=round((time.monotonic() - t0) * 1000, 1), message="연결 실패")
+
+
+async def _check_safeguard(base_url: str, enabled: bool) -> ServiceStatus:
+    if not enabled:
+        return ServiceStatus(status="down", enabled=False, message="disabled")
+    # rstrip은 개별 문자를 제거하므로 suffix 제거에 사용하면 안 됨
+    base = base_url.rstrip("/").removesuffix("/v1")
+    health_url = base + "/health"
+    t0 = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(health_url)
+        latency = round((time.monotonic() - t0) * 1000, 1)
+        if resp.status_code < 400:
+            return ServiceStatus(status="ok", latency_ms=latency)
+        return ServiceStatus(status="degraded", latency_ms=latency, message=f"HTTP {resp.status_code}")
+    except Exception:
+        logger.exception("Safeguard health check failed")
+        return ServiceStatus(status="down", latency_ms=round((time.monotonic() - t0) * 1000, 1), message="연결 실패")
+
+
+def _check_ner(model_name: str) -> ServiceStatus:
+    if not model_name:
+        return ServiceStatus(status="down", message="모델 미설정")
+    return ServiceStatus(status="ok")
+
+
+@router.get("/system/health", response_model=SystemHealthResponse)
+async def get_system_health(
+    db: AsyncSession = Depends(get_db),
+    _: None = Depends(verify_admin),
+) -> SystemHealthResponse:
+    """인프라 서비스 상태 일괄 조회 (최고관리자 전용)"""
+    settings = get_settings()
+
+    pg, rd, llm, emb, sg = await asyncio.gather(
+        _check_postgresql(db),
+        _check_redis(settings.redis_url),
+        _check_http_models(settings.llm_base_url, settings.llm_api_key, "llm"),
+        _check_http_models(settings.embedding_base_url, settings.embedding_api_key, "embedding"),
+        _check_safeguard(settings.safeguard_base_url, settings.safeguard_enabled),
+    )
+    ner = _check_ner(settings.pii_ner_model)
+
+    return SystemHealthResponse(
+        postgresql=pg,
+        redis=rd,
+        llm=llm,
+        embedding=emb,
+        safeguard=sg,
+        ner=ner,
+        checked_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
 
 
 # ─── Request/Response Models ──────────────────────────────────────────────────
