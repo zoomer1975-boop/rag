@@ -1,12 +1,15 @@
 """PII 마스킹 서비스 — regex + NER (klue/bert-base)"""
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,9 +37,13 @@ _REGEX_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 _NER_TAG_MAP = {
-    "PS": ("[이름]",   "NAME"),
-    "LC": ("[주소]",   "ADDRESS"),
-    "OG": ("[기관명]", "ORG"),
+    "PER": ("[이름]",   "NAME"),
+    "LOC": ("[주소]",   "ADDRESS"),
+    "ORG": ("[기관명]", "ORG"),
+    # NAVER NER legacy tags
+    "PS":  ("[이름]",   "NAME"),
+    "LC":  ("[주소]",   "ADDRESS"),
+    "OG":  ("[기관명]", "ORG"),
 }
 
 
@@ -49,13 +56,15 @@ class PIIMasker:
             try:
                 from transformers import pipeline  # type: ignore
                 settings = get_settings()
+                logger.info("PII NER pipeline loading: model=%s device=%s", settings.pii_ner_model, settings.pii_ner_device)
                 PIIMasker._pipeline_instance = pipeline(
                     "token-classification",
                     model=settings.pii_ner_model,
                     device=settings.pii_ner_device,
-                    aggregation_strategy="simple",
                 )
-            except Exception:
+                logger.info("PII NER pipeline loaded successfully")
+            except Exception as e:
+                logger.error("PII NER pipeline failed to load: %s", e, exc_info=True)
                 PIIMasker._pipeline_instance = None
             PIIMasker._pipeline_loaded = True
         return PIIMasker._pipeline_instance
@@ -136,44 +145,95 @@ class PIIMasker:
 
         return "".join(result_parts), entities
 
+    def _parse_entity_tag(self, label: str) -> tuple[str, str]:
+        """Parse token label into (entity_type, bio_position).
+
+        Handles both formats:
+          - Standard:  B-PER / I-PER  → ("PER", "B")
+          - NAVER NER: PER-B / PER-I  → ("PER", "B")
+        Returns ("", "") for unknown formats.
+        """
+        if "-" not in label:
+            return "", ""
+        parts = label.split("-", 1)
+        if parts[0] in ("B", "I"):
+            return parts[1], parts[0]
+        if parts[1] in ("B", "I"):
+            return parts[0], parts[1]
+        return "", ""
+
     def _apply_ner(
         self,
         text: str,
         enabled_types: list[str] | None,
     ) -> tuple[str, list[PIIEntity]]:
-        pipeline = self._get_pipeline()
-        if pipeline is None:
+        ner_pipeline = self._get_pipeline()
+        if ner_pipeline is None:
             return text, []
 
-        raw_entities = pipeline(text)
-        if not raw_entities:
+        raw_tokens = ner_pipeline(text)
+        if not raw_tokens:
             return text, []
+
+        # Group consecutive BIO tokens into spans
+        spans: list[tuple[int, int, str]] = []  # (start, end, entity_type)
+        cur_type: str = ""
+        cur_start: int = 0
+        cur_end: int = 0
+
+        for tok in raw_tokens:
+            raw_label: str = tok.get("entity", "")
+            etype, bio = self._parse_entity_tag(raw_label)
+            t_start: int = tok["start"]
+            t_end: int = tok["end"]
+            word: str = tok.get("word", "")
+            is_subword = word.startswith("##")
+
+            if is_subword and cur_type:
+                # WordPiece continuation — always merge regardless of BIO label
+                cur_end = t_end
+                continue
+
+            if not etype or etype not in _NER_TAG_MAP:
+                if cur_type:
+                    spans.append((cur_start, cur_end, cur_type))
+                cur_type = ""
+                continue
+
+            if bio == "B" or etype != cur_type:
+                if cur_type:
+                    spans.append((cur_start, cur_end, cur_type))
+                cur_type = etype
+                cur_start = t_start
+                cur_end = t_end
+            else:
+                cur_end = t_end
+        if cur_type:
+            spans.append((cur_start, cur_end, cur_type))
+
+        # Expand spans to word boundaries (handles wordpiece tokens labeled O mid-word)
+        expanded: list[tuple[int, int, str]] = []
+        for s, e, et in spans:
+            while e < len(text) and text[e] not in " \t\n.,!?()[]{}":
+                e += 1
+            expanded.append((s, e, et))
+        spans = expanded
 
         # Filter by enabled_types
-        ner_type_keys = set(_NER_TAG_MAP.keys())
-        filtered = []
-        for ent in raw_entities:
-            tag = ent.get("entity_group", "")
-            if tag not in ner_type_keys:
-                continue
-            _, mapped_type = _NER_TAG_MAP[tag]
-            if enabled_types is not None and mapped_type not in enabled_types:
-                continue
-            filtered.append(ent)
-
+        filtered = [
+            (s, e, et) for s, e, et in spans
+            if enabled_types is None or _NER_TAG_MAP[et][1] in enabled_types
+        ]
         if not filtered:
             return text, []
 
-        # Sort by start descending for safe in-place replacement
-        filtered.sort(key=lambda x: x["start"], reverse=True)
+        # Replace from right to left to preserve offsets
+        filtered.sort(key=lambda x: x[0], reverse=True)
         entities: list[PIIEntity] = []
         result = text
-        for ent in filtered:
-            tag = ent["entity_group"]
-            label, mapped_type = _NER_TAG_MAP[tag]
-            start: int = ent["start"]
-            end: int = ent["end"]
-            original = ent["word"]
+        for start, end, etype in filtered:
+            label, mapped_type = _NER_TAG_MAP[etype]
+            original = text[start:end]
             result = result[:start] + label + result[end:]
             entities.append(PIIEntity(
                 type=mapped_type,
