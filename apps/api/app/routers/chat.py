@@ -290,12 +290,12 @@ async def chat(
                 },
             )
 
-    # 사용자 메시지 저장 (암호화)
+    # 사용자 메시지 저장 (암호화) — PII 마스킹 후 텍스트 사용
     user_msg = Message(
         conversation_id=conversation.id,
         role="user",
         content=None,
-        content_enc=enc.encrypt(body.message, dek),
+        content_enc=enc.encrypt(user_message, dek),
     )
     db.add(user_msg)
     await db.commit()
