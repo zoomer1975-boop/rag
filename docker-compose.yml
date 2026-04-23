@@ -31,11 +31,14 @@ services:
 
   safeguard:
     image: vllm/vllm-openai:latest
+    #image: vllm/vllm-openai:v0.6.6.post1
     command: >
       --model kakaocorp/kanana-safeguard-prompt-2.1b
       --port 8001
       --max-model-len 4096
       --dtype bfloat16
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8001:8001"
     volumes:
@@ -94,10 +97,18 @@ services:
       NEXT_PUBLIC_API_URL: /rag/api/v1
       # 서버 사이드 프록시가 Docker 내부 네트워크로 FastAPI를 호출할 때 사용
       INTERNAL_API_URL: http://api:8000
+      # standalone server.js가 0.0.0.0에 바인딩하도록 설정 (healthcheck용)
+      HOSTNAME: "0.0.0.0"
     ports:
       - "3005:3000"
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://0.0.0.0:3000/rag/admin || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     restart: unless-stopped
 
 
@@ -108,8 +119,30 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - api
-      - admin
+      admin:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  nginx-reloader:
+    image: docker:cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        docker events \
+          --filter label=com.docker.compose.project=rag \
+          --filter label=com.docker.compose.service=admin \
+          --filter event=start \
+        | while read -r _; do
+            sleep 5
+            docker exec rag-nginx-1 nginx -s reload
+            echo "nginx reloaded after admin restart"
+          done
+    depends_on:
+      - nginx
     restart: unless-stopped
 
 volumes:

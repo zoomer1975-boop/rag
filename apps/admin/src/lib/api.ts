@@ -278,6 +278,27 @@ export interface BoilerplatePreviewResponse {
   removed_count: number;
 }
 
+export interface ServiceStatus {
+  status: "ok" | "degraded" | "down";
+  latency_ms: number | null;
+  message: string | null;
+  enabled: boolean;
+}
+
+export interface SystemHealth {
+  postgresql: ServiceStatus;
+  redis: ServiceStatus;
+  llm: ServiceStatus;
+  embedding: ServiceStatus;
+  safeguard: ServiceStatus;
+  ner: ServiceStatus;
+  checked_at: string;
+}
+
+export async function fetchSystemHealth(): Promise<SystemHealth> {
+  return adminFetch<SystemHealth>("/admin/system/health");
+}
+
 export async function listBoilerplatePatterns(tenantId: number): Promise<BoilerplatePattern[]> {
   return adminFetch<BoilerplatePattern[]>(`/tenants/${tenantId}/boilerplate`);
 }
