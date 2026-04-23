@@ -141,13 +141,16 @@ async def chat(
 
     # PII 마스킹 — safeguard 이후, 임베딩/LLM 이전
     pii_cfg = tenant.pii_config if hasattr(tenant, "pii_config") else {}
+    logger.info("PII config for tenant %s: %s", tenant.id, pii_cfg)
     if pii_cfg.get("enabled"):
         _pii_masker = PIIMasker()
         _mask_result = await _pii_masker.mask(
             body.message, enabled_types=pii_cfg.get("types")
         )
+        logger.info("PII masking: original=%r masked=%r entities=%s", body.message, _mask_result.masked_text, _mask_result.entities)
         user_message = _mask_result.masked_text
     else:
+        logger.info("PII masking disabled for tenant %s", tenant.id)
         user_message = body.message
 
     lang_service = LanguageService(default_language=settings.default_language)

@@ -205,7 +205,7 @@ class TestNERMasking:
     def test_person_name_masked(self, masker):
         mock_pipeline = MagicMock()
         mock_pipeline.return_value = [
-            {"entity_group": "PS", "word": "홍길동", "start": 5, "end": 8, "score": 0.99}
+            {"entity": "B-PS", "word": "홍길동", "start": 5, "end": 8, "score": 0.99}
         ]
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("저는 홍길동입니다.")
@@ -215,7 +215,8 @@ class TestNERMasking:
     def test_location_address_masked(self, masker):
         mock_pipeline = MagicMock()
         mock_pipeline.return_value = [
-            {"entity_group": "LC", "word": "서울시 강남구", "start": 3, "end": 10, "score": 0.97}
+            {"entity": "B-LC", "word": "서울시", "start": 3, "end": 6, "score": 0.97},
+            {"entity": "I-LC", "word": "강남구", "start": 7, "end": 10, "score": 0.96},
         ]
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("저는 서울시 강남구에 삽니다.")
@@ -224,7 +225,7 @@ class TestNERMasking:
     def test_ner_entity_type_name(self, masker):
         mock_pipeline = MagicMock()
         mock_pipeline.return_value = [
-            {"entity_group": "PS", "word": "김철수", "start": 0, "end": 3, "score": 0.95}
+            {"entity": "B-PS", "word": "김철수", "start": 0, "end": 3, "score": 0.95}
         ]
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("김철수가 질문합니다.")
@@ -233,7 +234,7 @@ class TestNERMasking:
     def test_ner_entity_original_preserved(self, masker):
         mock_pipeline = MagicMock()
         mock_pipeline.return_value = [
-            {"entity_group": "PS", "word": "이영희", "start": 0, "end": 3, "score": 0.98}
+            {"entity": "B-PS", "word": "이영희", "start": 0, "end": 3, "score": 0.98}
         ]
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("이영희 고객님")
@@ -250,7 +251,7 @@ class TestNERMasking:
     def test_ner_disabled_type_not_masked(self, masker):
         mock_pipeline = MagicMock()
         mock_pipeline.return_value = [
-            {"entity_group": "PS", "word": "홍길동", "start": 0, "end": 3, "score": 0.99}
+            {"entity": "B-PS", "word": "홍길동", "start": 0, "end": 3, "score": 0.99}
         ]
         with patch.object(masker, "_get_pipeline", return_value=mock_pipeline):
             result = masker.mask_sync("홍길동입니다", enabled_types=["PHONE", "EMAIL"])
