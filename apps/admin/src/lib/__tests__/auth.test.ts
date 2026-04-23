@@ -32,6 +32,21 @@ describe("SESSION_MAX_AGE", () => {
   });
 });
 
+describe("createSessionToken — secret requirements", () => {
+  it("should throw when ADMIN_SESSION_SECRET is absent (H-1: no password fallback)", async () => {
+    // ADMIN_PASSWORD is set but ADMIN_SESSION_SECRET is not — must throw, not fall back
+    delete process.env.ADMIN_SESSION_SECRET;
+    await expect(createSessionToken("admin")).rejects.toThrow();
+    process.env.ADMIN_SESSION_SECRET = TEST_SECRET;
+  });
+
+  it("should throw when ADMIN_SESSION_SECRET is too short", async () => {
+    process.env.ADMIN_SESSION_SECRET = "short";
+    await expect(createSessionToken("admin")).rejects.toThrow("32");
+    process.env.ADMIN_SESSION_SECRET = TEST_SECRET;
+  });
+});
+
 describe("createSessionToken", () => {
   it("should return a non-empty string", async () => {
     const token = await createSessionToken("admin");

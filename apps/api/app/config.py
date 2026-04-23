@@ -9,8 +9,8 @@ _INSECURE_DEFAULTS: dict[str, str] = {}
 
 _REQUIRED_SECRETS = {
     "secret_key": "change-me-to-a-random-secret-key",
-    # admin_password 도 기본값이면 서버 기동 차단
     "admin_password": "change-me",
+    "admin_api_token": "",
 }
 
 
@@ -118,11 +118,6 @@ def get_settings() -> Settings:
                 "[보안 경고] %s 가 기본값으로 설정되어 있습니다. 프로덕션 환경에서는 반드시 변경하세요.",
                 field.upper(),
             )
-    if not settings.admin_api_token:
-        logger.warning(
-            "[보안 경고] ADMIN_API_TOKEN 이 설정되지 않았습니다. "
-            "관리자 API 엔드포인트가 인증 없이 노출됩니다."
-        )
     if settings.cors_allowed_origins == ["*"]:
         logger.warning(
             "[보안 경고] CORS_ALLOWED_ORIGINS 가 와일드카드(*)로 설정되어 있습니다. "

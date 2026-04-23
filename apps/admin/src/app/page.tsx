@@ -6,6 +6,7 @@ import Dashboard from "@/components/Dashboard";
 import LogoutButton from "@/components/LogoutButton";
 import CreateTenantForm from "@/components/CreateTenantForm";
 import SubAdminManager from "@/components/SubAdminManager";
+import SystemStatusPanel from "@/components/SystemStatusPanel";
 import styles from "./page.module.css";
 
 interface SessionPayload {
@@ -135,6 +136,7 @@ export default function Home() {
         </div>
       </header>
       <main className={styles.main}>
+        {session?.is_superadmin && <SystemStatusPanel />}
         <div className={styles.panel}>
           <h1 className={styles.title}>테넌트 목록</h1>
           <div className={styles.actions}>
