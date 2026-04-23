@@ -425,7 +425,18 @@ async def admin_chat_test(
                     "X-Session-Id": blocked_session_id,
                 },
             )
-    # PII 마스킹 — safeguard 이후, 임베딩/LLM 이전
+    # ── PII 마스킹 ────────────────────────────────────────────────────────────
+    # 어드민 테스트 채팅 엔드포인트도 위젯 채팅(chat.py)과 동일하게 마스킹해야 한다.
+    # 이전에 이 블록이 없어서, 어드민 패널에서 보낸 메시지는 PII가 그대로
+    # 임베딩·LLM·DB에 저장되는 버그가 있었다.
+    #
+    # safeguard 통과 직후에 위치해야 한다:
+    #   1) safeguard가 차단한 메시지는 여기 도달하지 않으므로 불필요한 마스킹 없음
+    #   2) 임베딩 생성 전에 마스킹해야 원문이 벡터 DB에 저장되지 않음
+    #
+    # pii_config: 테넌트 DB 컬럼(JSONB), 예) {"enabled": true, "types": ["NAME", "PHONE"]}
+    #   - enabled  : 마스킹 전체 on/off
+    #   - types    : 활성화할 PII 유형 목록 (None이면 전체 유형 마스킹)
     pii_cfg = tenant.pii_config if hasattr(tenant, "pii_config") else {}
     if pii_cfg.get("enabled"):
         _pii_masker = PIIMasker()
@@ -435,6 +446,8 @@ async def admin_chat_test(
         user_message = _mask_result.masked_text
     else:
         user_message = body.message
+    # 이후 ls_logger, RAG 검색, build_messages, Message 저장 등
+    # 모든 하위 호출은 원문(body.message) 대신 user_message를 사용한다.
 
     lang_service = LanguageService(default_language=settings.default_language)
     resolved_lang = lang_service.resolve_lang(
