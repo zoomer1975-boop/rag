@@ -32,6 +32,9 @@ async def lifespan(app: FastAPI):
     WIDGET_DIR.mkdir(parents=True, exist_ok=True)
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
     start_scheduler()
+    if settings.reranker_enabled:
+        from app.services.reranker import get_reranker_service
+        get_reranker_service()  # 서버 시작 시 모델 사전 로드 (cold start 방지)
     yield
     stop_scheduler()
 
@@ -45,7 +48,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-API-Key", "X-Admin-Token"],

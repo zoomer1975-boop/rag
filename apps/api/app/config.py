@@ -5,12 +5,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
-_INSECURE_DEFAULTS = {
-    "admin_password": "change-me",
-}
+_INSECURE_DEFAULTS: dict[str, str] = {}
 
 _REQUIRED_SECRETS = {
     "secret_key": "change-me-to-a-random-secret-key",
+    # admin_password 도 기본값이면 서버 기동 차단
+    "admin_password": "change-me",
 }
 
 
@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     default_language: str = "ko"
     supported_languages: str = "ko,en,ja,zh,es,fr,de,pt,vi,th"
 
+    # CORS — 프로덕션에서는 실제 출처 목록으로 교체하세요 (예: ["https://example.com"])
+    cors_allowed_origins: list[str] = ["*"]
+
     # Rate limiting
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
@@ -76,6 +79,12 @@ class Settings(BaseSettings):
     safeguard_model: str = "kakaocorp/kanana-safeguard-prompt-2.1b"
     safeguard_blocked_message: str = "**UNSAFE** 죄송합니다. 해당 메시지는 처리할 수 없습니다."
     safeguard_fail_open: bool = True
+
+    # Reranker (cross-encoder, 로컬 모델)
+    reranker_enabled: bool = False
+    reranker_model: str = "dragonkue/bge-reranker-v2-m3-ko"
+    reranker_top_n: int = 3
+    reranker_device: str = "cuda"
 
     @property
     def supported_language_list(self) -> list[str]:
@@ -109,5 +118,11 @@ def get_settings() -> Settings:
         logger.warning(
             "[보안 경고] ADMIN_API_TOKEN 이 설정되지 않았습니다. "
             "관리자 API 엔드포인트가 인증 없이 노출됩니다."
+        )
+    if settings.cors_allowed_origins == ["*"]:
+        logger.warning(
+            "[보안 경고] CORS_ALLOWED_ORIGINS 가 와일드카드(*)로 설정되어 있습니다. "
+            "프로덕션 환경에서는 실제 출처 목록으로 변경하세요. "
+            "예: CORS_ALLOWED_ORIGINS=[\"https://example.com\"]"
         )
     return settings

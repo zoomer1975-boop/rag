@@ -13,6 +13,7 @@ from app.services.embeddings import EmbeddingClient
 from app.services.graph_retriever import GraphRAGRetriever, GraphRetrievalResult
 from app.services.language import LanguageService
 from app.services.llm import LLMClient
+from app.services.reranker import RerankerService
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,15 @@ class RAGService:
         embedding_client: EmbeddingClient,
         language_service: LanguageService,
         llm_client: LLMClient | None = None,
+        reranker: RerankerService | None = None,
+        reranker_top_n: int = 3,
     ) -> None:
         self._db = db
         self._embedding_client = embedding_client
         self._language_service = language_service
         self._llm_client = llm_client
+        self._reranker = reranker
+        self._reranker_top_n = reranker_top_n
         self._graph_result: GraphRetrievalResult | None = None
 
     async def retrieve(
@@ -95,6 +100,9 @@ class RAGService:
             )
             if len(chunks) >= top_k:
                 break
+
+        if self._reranker and chunks:
+            chunks = await self._reranker.rerank(query, chunks, top_n=self._reranker_top_n)
 
         logger.info("retrieve: returned %d chunks for tenant_id=%d", len(chunks), tenant_id)
         return chunks

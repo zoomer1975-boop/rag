@@ -1,5 +1,6 @@
 """관리자 인증 라우터"""
 
+import hmac
 import logging
 
 import redis.asyncio as aioredis
@@ -102,14 +103,20 @@ async def _ensure_tables(db: AsyncSession) -> None:
 
 
 def _get_client_ip(request: Request) -> str:
-    """클라이언트 IP 추출"""
-    # X-Forwarded-For (프록시 뒤)
-    if "x-forwarded-for" in request.headers:
-        return request.headers["x-forwarded-for"].split(",")[0].strip()
-    # X-Real-IP (프록시)
+    """클라이언트 IP 추출.
+
+    신뢰 순서:
+    1. X-Real-IP  — nginx가 $remote_addr 로 직접 설정하므로 스푸핑 불가
+    2. X-Forwarded-For 의 마지막 IP — 신뢰할 수 있는 프록시가 추가한 값
+    3. 직접 연결
+    """
+    # 1. nginx 가 직접 설정한 X-Real-IP (스푸핑 불가)
     if "x-real-ip" in request.headers:
-        return request.headers["x-real-ip"]
-    # 직접 연결
+        return request.headers["x-real-ip"].strip()
+    # 2. XFF 마지막 값 (신뢰 프록시가 추가한 항목)
+    if "x-forwarded-for" in request.headers:
+        return request.headers["x-forwarded-for"].split(",")[-1].strip()
+    # 3. 직접 연결
     return request.client.host if request.client else "0.0.0.0"
 
 
@@ -125,8 +132,10 @@ async def login(
 
     await _check_login_rate_limit(client_ip)
 
-    # 1. 최고관리자 체크
-    if req.username == settings.admin_username and req.password == settings.admin_password:
+    # 1. 최고관리자 체크 — 타이밍 안전 비교 (timing-safe compare)
+    username_ok = hmac.compare_digest(req.username, settings.admin_username)
+    password_ok = hmac.compare_digest(req.password, settings.admin_password)
+    if username_ok and password_ok:
         await _ensure_tables(db)
         return LoginResponse(ok=True, is_superadmin=True)
 
