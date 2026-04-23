@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     reranker_top_n: int = 3
     reranker_device: str = "cuda"
 
+    # PII Masker (NER, 로컬 모델)
+    pii_ner_model: str = "snunlp/KR-ELECTRA-discriminator"
+    pii_ner_device: str = "cpu"
+
     @property
     def supported_language_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",")]

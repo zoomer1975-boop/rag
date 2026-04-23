@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
+from app.config import get_settings
+
 
 @dataclass
 class PIIEntity:
@@ -45,9 +47,11 @@ class PIIMasker:
         if not PIIMasker._pipeline_loaded:
             try:
                 from transformers import pipeline  # type: ignore
+                settings = get_settings()
                 PIIMasker._pipeline_instance = pipeline(
                     "token-classification",
-                    model="snunlp/KR-ELECTRA-discriminator",
+                    model=settings.pii_ner_model,
+                    device=settings.pii_ner_device,
                     aggregation_strategy="simple",
                 )
             except Exception:
