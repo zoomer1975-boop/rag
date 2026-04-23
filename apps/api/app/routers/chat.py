@@ -258,7 +258,7 @@ async def chat(
                 conversation_id=conversation.id,
                 role="user",
                 content=None,
-                content_enc=enc.encrypt(message, dek),
+                content_enc=enc.encrypt(body.message, dek),
             )
             db.add(user_msg)
             await db.commit()
@@ -283,7 +283,7 @@ async def chat(
         conversation_id=conversation.id,
         role="user",
         content=None,
-        content_enc=enc.encrypt(message, dek),
+        content_enc=enc.encrypt(body.message, dek),
     )
     db.add(user_msg)
     await db.commit()

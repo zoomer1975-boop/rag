@@ -59,4 +59,6 @@ def get_reranker_service() -> RerankerService | None:
     settings = get_settings()
     if not settings.reranker_enabled:
         return None
-    return _load_reranker(settings.reranker_model, settings.reranker_device)
+    svc = _load_reranker(settings.reranker_model, settings.reranker_device)
+    logger.info("get_reranker_service: returning %r cache_info=%s", svc, _load_reranker.cache_info())
+    return svc
