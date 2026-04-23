@@ -58,7 +58,7 @@ class Tenant(Base):
     pii_config: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
-        server_default='{"enabled": false, "types": ["NAME","ADDRESS","PHONE","EMAIL","SSN","CARD","BRN"]}',
+        server_default='{"enabled": true, "types": ["NAME","ADDRESS","PHONE","EMAIL","SSN","CARD","BRN"]}',
     )
 
     # 대화 암호화 — MEK로 감싼 DEK (Envelope Encryption)
