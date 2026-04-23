@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     safeguard_blocked_message: str = "**UNSAFE** 죄송합니다. 해당 메시지는 처리할 수 없습니다."
     safeguard_fail_open: bool = True
 
+    # Reranker (cross-encoder, 로컬 모델)
+    reranker_enabled: bool = False
+    reranker_model: str = "dragonkue/bge-reranker-v2-m3-ko"
+    reranker_top_n: int = 3
+    reranker_device: str = "cuda"
+
     @property
     def supported_language_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",")]

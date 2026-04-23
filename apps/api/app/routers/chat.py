@@ -29,6 +29,7 @@ from app.services.language import LanguageService
 from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import LLMClient, TextResult, ToolCallResult, get_llm_client
 from app.services.rag import RAGService
+from app.services.reranker import RerankerService, get_reranker_service
 from app.services.tool_executor import MAX_TOOL_CALLS_PER_CHAT, build_openai_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ async def chat(
     llm_client: LLMClient = Depends(get_llm_client),
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     safeguard_client: SafeguardClient = Depends(get_safeguard_client),
+    reranker: RerankerService | None = Depends(get_reranker_service),
     accept_language: str | None = Header(None, alias="Accept-Language"),
 ):
     """SSE 스트리밍 채팅 엔드포인트"""
@@ -216,6 +218,8 @@ async def chat(
         embedding_client=embedding_client,
         language_service=lang_service,
         llm_client=llm_client,
+        reranker=reranker,
+        reranker_top_n=settings.reranker_top_n,
     )
     retrieved_chunks = await rag_service.retrieve(
         query=body.message,
