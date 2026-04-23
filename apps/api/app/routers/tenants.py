@@ -55,6 +55,7 @@ from app.services.langsmith_logger import LangSmithLogger, create_logger
 from app.services.llm import TextResult, get_llm_client
 from app.services.rag import RAGService
 from app.services.safeguard import SafeguardClient, get_safeguard_client
+from app.services.pii_masker import PIIMasker
 from app.services.tool_executor import MAX_TOOL_CALLS_PER_CHAT, build_openai_tools, execute_tool
 
 logger = logging.getLogger(__name__)
@@ -424,6 +425,17 @@ async def admin_chat_test(
                     "X-Session-Id": blocked_session_id,
                 },
             )
+    # PII 마스킹 — safeguard 이후, 임베딩/LLM 이전
+    pii_cfg = tenant.pii_config if hasattr(tenant, "pii_config") else {}
+    if pii_cfg.get("enabled"):
+        _pii_masker = PIIMasker()
+        _mask_result = await _pii_masker.mask(
+            body.message, enabled_types=pii_cfg.get("types")
+        )
+        user_message = _mask_result.masked_text
+    else:
+        user_message = body.message
+
     lang_service = LanguageService(default_language=settings.default_language)
     resolved_lang = lang_service.resolve_lang(
         detected=settings.default_language,
@@ -465,7 +477,7 @@ async def admin_chat_test(
     ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
     ls_run_id = await ls_logger.start_trace(
         run_name="admin_rag_chat_test",
-        inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
+        inputs={"query": user_message, "tenant_id": tenant.id, "session_id": session_id},
     )
 
     tools_result = await db.execute(
@@ -491,18 +503,18 @@ async def admin_chat_test(
         language_service=lang_service,
     )
     retrieved_chunks = await rag_service.retrieve(
-        query=body.message,
+        query=user_message,
         tenant_id=tenant.id,
         top_k=5,
     )
     await ls_logger.log_retrieval(
         parent_run_id=ls_run_id,
-        query=body.message,
+        query=user_message,
         chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
     )
 
     messages = rag_service.build_messages(
-        query=body.message,
+        query=user_message,
         retrieved_chunks=retrieved_chunks,
         conversation_history=history,
         tenant=tenant,
@@ -516,7 +528,7 @@ async def admin_chat_test(
     user_msg = Message(
         conversation_id=conversation.id,
         role="user",
-        content=body.message,
+        content=user_message,
     )
     db.add(user_msg)
     await db.commit()
