@@ -93,6 +93,7 @@ class TenantUpdate(BaseModel):
     langsmith_api_key: str | None = None
     clarification_enabled: bool | None = None
     clarification_config: dict | None = None
+    pii_config: dict | None = None
 
 
 class TenantResponse(BaseModel):
@@ -110,6 +111,7 @@ class TenantResponse(BaseModel):
     has_langsmith: bool = False
     clarification_enabled: bool = False
     clarification_config: dict | None = None
+    pii_config: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -130,6 +132,7 @@ class TenantResponse(BaseModel):
             has_langsmith=bool(tenant.langsmith_api_key),
             clarification_enabled=tenant.clarification_enabled,
             clarification_config=tenant.clarification_config,
+            pii_config=tenant.pii_config,
         )
 
 
