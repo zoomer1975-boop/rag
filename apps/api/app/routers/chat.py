@@ -22,6 +22,7 @@ import redis.asyncio as aioredis
 from app.services.clarifier import ClarifierService
 from app.services.conv_encryption import get_encryptor
 from app.services.domain_validation import is_origin_allowed
+from app.services.pii_masker import PIIMasker
 from app.services.safeguard import SafeguardClient, get_safeguard_client
 from app.services.embeddings import EmbeddingClient, get_embedding_client
 from app.services.greeting_translator import GreetingTranslator
@@ -138,6 +139,17 @@ async def chat(
                 },
             )
 
+    # PII 마스킹 — safeguard 이후, 임베딩/LLM 이전
+    pii_cfg = tenant.pii_config if hasattr(tenant, "pii_config") else {}
+    if pii_cfg.get("enabled"):
+        _pii_masker = PIIMasker()
+        _mask_result = await _pii_masker.mask(
+            body.message, enabled_types=pii_cfg.get("types")
+        )
+        user_message = _mask_result.masked_text
+    else:
+        user_message = body.message
+
     lang_service = LanguageService(default_language=settings.default_language)
     detected_lang = lang_service.parse_accept_language(accept_language)
     resolved_lang = lang_service.resolve_lang(
@@ -192,7 +204,7 @@ async def chat(
     ls_logger = create_logger(tenant.langsmith_api_key, tenant.name)
     ls_run_id = await ls_logger.start_trace(
         run_name="rag_chat",
-        inputs={"query": body.message, "tenant_id": tenant.id, "session_id": session_id},
+        inputs={"query": user_message, "tenant_id": tenant.id, "session_id": session_id},
     )
 
     # 활성 API Tools 조회
@@ -222,18 +234,18 @@ async def chat(
         reranker_top_n=settings.reranker_top_n,
     )
     retrieved_chunks = await rag_service.retrieve(
-        query=body.message,
+        query=user_message,
         tenant_id=tenant.id,
         top_k=5,
     )
     await ls_logger.log_retrieval(
         parent_run_id=ls_run_id,
-        query=body.message,
+        query=user_message,
         chunks=[{"content": c.get("content", ""), "source": c.get("source", "")} for c in retrieved_chunks],
     )
 
     messages = rag_service.build_messages(
-        query=body.message,
+        query=user_message,
         retrieved_chunks=retrieved_chunks,
         conversation_history=history,
         tenant=tenant,
@@ -248,7 +260,7 @@ async def chat(
     if tenant.clarification_enabled:
         clarifier = ClarifierService()
         clarification = await clarifier.should_clarify(
-            query=body.message,
+            query=user_message,
             top_score=None,  # GraphRAG는 의미있는 유사도 점수를 제공하지 않음
             context_snippets=[c.get("content", "")[:300] for c in retrieved_chunks[:3]],
             clarification_round=clarification_round,
@@ -258,7 +270,7 @@ async def chat(
                 conversation_id=conversation.id,
                 role="user",
                 content=None,
-                content_enc=enc.encrypt(body.message, dek),
+                content_enc=enc.encrypt(user_message, dek),
             )
             db.add(user_msg)
             await db.commit()

@@ -49,6 +49,7 @@ jmespath==1.0.1
 # Reranker
 sentence-transformers>=3.0.0
 torch>=2.0.0
+transformers>=4.40.0
 
 # Testing
 pytest==8.3.3

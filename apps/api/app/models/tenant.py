@@ -54,6 +54,13 @@ class Tenant(Base):
     clarification_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     clarification_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # PII 마스킹 설정
+    pii_config: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default='{"enabled": false, "types": ["NAME","ADDRESS","PHONE","EMAIL","SSN","CARD","BRN"]}',
+    )
+
     # 대화 암호화 — MEK로 감싼 DEK (Envelope Encryption)
     encrypted_dek: Mapped[str | None] = mapped_column(Text, nullable=True)
 
