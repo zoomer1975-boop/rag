@@ -22,7 +22,8 @@ class RerankerService:
 
     def _compute(self, query: str, chunks: list[dict], top_n: int) -> list[dict]:
         pairs = [[query, chunk["content"]] for chunk in chunks]
-        scores = self._model.predict(pairs, apply_softmax=False)
+        scores = self._model.predict(pairs, apply_softmax=True)
+        logger.debug("reranker: raw_scores=%s", scores.tolist())
         ranked = sorted(zip(scores, chunks), key=lambda x: float(x[0]), reverse=True)
         return [
             {**{k: v for k, v in chunk.items() if k != "score"}, "score": float(score)}
