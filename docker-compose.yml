@@ -66,6 +66,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       SAFEGUARD_BASE_URL: http://safeguard:8001/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
