@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     safeguard_blocked_message: str = "**UNSAFE** 죄송합니다. 해당 메시지는 처리할 수 없습니다."
     safeguard_fail_open: bool = True
 
+    # Tool calling — "auto": 모델 자율 선택 (Ollama 호환), "required": 첫 호출 강제 (Gemma4/vLLM)
+    llm_tool_choice: str = "auto"
+
     # Reranker (cross-encoder, 로컬 모델)
     reranker_enabled: bool = False
     reranker_model: str = "dragonkue/bge-reranker-v2-m3-ko"

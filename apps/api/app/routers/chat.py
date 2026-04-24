@@ -425,6 +425,8 @@ async def _stream_response(
                 result = await llm_client.chat_with_tools(
                     messages=current_messages,
                     tools=openai_tools,
+                    # 첫 호출은 설정값 사용 (vLLM+Gemma4는 "required"), 이후는 "auto"로 복귀
+                    tool_choice="auto" if any_tool_called else None,
                 )
 
                 if isinstance(result, TextResult):

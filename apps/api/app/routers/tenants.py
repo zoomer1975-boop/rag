@@ -605,6 +605,7 @@ async def _admin_chat_stream(
                 result = await llm_client.chat_with_tools(
                     messages=current_messages,
                     tools=openai_tools,
+                    tool_choice="auto" if any_tool_called else None,
                 )
 
                 if isinstance(result, TextResult):

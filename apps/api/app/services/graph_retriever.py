@@ -178,7 +178,11 @@ class GraphRAGRetriever:
         text = " ".join(keywords).strip()
         if not text:
             return []
-        vec = await self._embeddings.embed(text)
+        try:
+            vec = await self._embeddings.embed(text)
+        except Exception as exc:
+            logger.warning("graph_retriever: entity embedding failed: %s", exc)
+            return []
         stmt = (
             select(Entity)
             .where(
@@ -199,7 +203,11 @@ class GraphRAGRetriever:
         text = " ".join(keywords).strip()
         if not text:
             return []
-        vec = await self._embeddings.embed(text)
+        try:
+            vec = await self._embeddings.embed(text)
+        except Exception as exc:
+            logger.warning("graph_retriever: relationship embedding failed: %s", exc)
+            return []
         stmt = (
             select(Relationship)
             .where(

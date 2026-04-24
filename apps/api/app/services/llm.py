@@ -75,6 +75,7 @@ class LLMClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tool_choice: str | None = None,
     ) -> ToolCallResult | TextResult:
         """Tool calling 지원 채팅 완성 (non-streaming).
 
@@ -88,18 +89,21 @@ class LLMClient:
         _model = model or settings.llm_model
         # temperature=0.0은 falsy이므로 `or` 대신 `is not None` 체크
         _temperature = temperature if temperature is not None else 0.0
+        _tool_choice = tool_choice if tool_choice is not None else settings.llm_tool_choice
         logger.info(
-            "[tool_calling] REQUEST model=%s tools=%d tool_names=%s temperature=%s",
+            "[tool_calling] REQUEST model=%s tools=%d tool_names=%s temperature=%s tool_choice=%s",
             _model,
             len(tools),
             [t["function"]["name"] for t in tools if t.get("function")],
             _temperature,
+            _tool_choice,
         )
 
         response = await self._client.chat.completions.create(
             model=_model,
             messages=messages,
             tools=tools,
+            tool_choice=_tool_choice,
             temperature=_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
