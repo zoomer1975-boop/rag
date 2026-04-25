@@ -170,6 +170,13 @@
   opacity: 0.8;
 }
 
+.mdImg {
+  max-width: 90%;
+  border-radius: var(--radius-sm);
+  margin: 4px 0;
+  display: block;
+}
+
 /* assistant 버블 안에서는 배경 조정 */
 .assistant .mdCode {
   background: var(--color-surface-2);
