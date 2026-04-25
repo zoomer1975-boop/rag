@@ -40,6 +40,24 @@
   let isOpen = false;
   let isStreaming = false;
   let abortController = null;
+  let messageHistory = [];
+
+  // ─── Session persistence ──────────────────────────────────────────────────
+
+  const STORAGE_KEY = `rag_chat_${API_KEY}`;
+
+  function loadState() {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : { sessionId: null, messages: [] };
+    } catch { return { sessionId: null, messages: [] }; }
+  }
+
+  function saveState() {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ sessionId, messages: messageHistory }));
+    } catch {}
+  }
 
   // ─── Shadow DOM mount ─────────────────────────────────────────────────────
 
@@ -376,6 +394,28 @@
   const windowTitle = shadow.getElementById("window-title");
   const quickRepliesEl = shadow.getElementById("quick-replies");
 
+  // ─── Restore persisted session ────────────────────────────────────────────
+
+  (function restoreState() {
+    const saved = loadState();
+    sessionId = saved.sessionId;
+    messageHistory = saved.messages || [];
+    messageHistory.forEach(({ role, text, html }) => {
+      const msgEl = document.createElement("div");
+      msgEl.className = `msg ${role}`;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      if (role === "assistant" && html) {
+        bubble.innerHTML = html;
+      } else {
+        bubble.textContent = text;
+      }
+      msgEl.appendChild(bubble);
+      messages.appendChild(msgEl);
+    });
+    if (messageHistory.length > 0) scrollToBottom();
+  })();
+
   // ─── Widget config applied at runtime ─────────────────────────────────────
 
   function applyConfig(config) {
@@ -565,6 +605,8 @@
     bubble.textContent = text;
     msgEl.appendChild(bubble);
     messages.appendChild(msgEl);
+    messageHistory.push({ role, text, html: null });
+    saveState();
     scrollToBottom();
     return bubble;
   }
@@ -711,6 +753,7 @@
             const sid = event.session_id;
             if (typeof sid === "string" && /^[a-zA-Z0-9_-]{8,128}$/.test(sid)) {
               sessionId = sid;
+              saveState();
             }
           } else if (event.type === "sources") {
             requestAnimationFrame(() => appendSources(event.sources));
@@ -748,6 +791,10 @@
             // Stream complete
           }
         }
+      }
+      if (assistantText) {
+        messageHistory.push({ role: "assistant", text: assistantText, html: parseMarkdown(assistantText) });
+        saveState();
       }
     } catch (err) {
       if (err.name !== "AbortError") {

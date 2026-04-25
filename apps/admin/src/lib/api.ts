@@ -114,6 +114,22 @@ export interface Stats {
   chunk_count: number;
   conversation_count: number;
   message_count: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  avg_latency_ms: number | null;
+  avg_messages_per_conversation: number;
+}
+
+export interface DailyUsage {
+  date: string;
+  call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface LanguageBreakdown {
+  lang_code: string;
+  count: number;
 }
 
 export interface Conversation {

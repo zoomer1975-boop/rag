@@ -215,14 +215,6 @@ pytest tests/ -v --cov=app
 
 SSE 이벤트 타입: `session` → `sources` → `token` (반복) → `done`
 
-## MindVault — MANDATORY
+## python 실행 명령어
+python3 로 호출
 
-**ALWAYS run `mindvault query "<question>" --global` BEFORE answering any codebase question.**
-This is not optional. The knowledge graph contains project context, relationships, and decisions
-that you cannot derive from reading files alone.
-
-1. Run `mindvault query "<question>" --global` first
-2. Read the Search Results, Graph Context, and Wiki Context in the output
-3. Use this context to inform your answer — do NOT ignore it
-4. If `mindvault-out/` doesn't exist, run `mindvault ingest .` first
-5. Only fall back to reading raw files if MindVault returns no results
