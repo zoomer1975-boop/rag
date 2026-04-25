@@ -1,48 +1,246 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
 .heading {
   font-size: 17px;
   font-weight: 700;
-  margin-bottom: 20px;
+  margin-bottom: 0;
 }
+
+.subheading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+}
+
+/* ── Date range bar ─────────────────────────────────────────── */
+
+.dateBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.presets {
+  display: flex;
+  gap: 6px;
+}
+
+.presetBtn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.presetBtn:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.dateInputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dateInput {
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.dateSep {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* ── Top stat cards ─────────────────────────────────────────── */
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.subGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
 }
 
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 20px 20px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .value {
-  font-size: 36px;
+  font-size: 30px;
   font-weight: 800;
   line-height: 1;
   color: var(--color-accent);
-  letter-spacing: -1px;
+  letter-spacing: -0.5px;
 }
 
 .unit {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
 .label {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
-.loading,
-.error {
+/* ── Two-column section row ─────────────────────────────────── */
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 700px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+/* ── SVG Chart ──────────────────────────────────────────────── */
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.gridLine {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.bar {
+  fill: var(--color-accent);
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+
+.bar:hover {
+  opacity: 1;
+}
+
+.tokenLine {
+  stroke: oklch(65% 0.18 30);
+  stroke-width: 1.5;
+}
+
+.axisLabel {
+  font-size: 9px;
+  fill: var(--color-text-muted);
+}
+
+.legend {
+  font-size: 11px;
   color: var(--color-text-muted);
-  padding: 32px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.legendBar {
+  color: var(--color-accent);
+  opacity: 0.75;
+}
+
+.legendLine {
+  color: oklch(65% 0.18 30);
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ── Language bars ──────────────────────────────────────────── */
+
+.langList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.langRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.langCode {
+  width: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.langBarTrack {
+  flex: 1;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.langBar {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+
+.langCount {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── States ─────────────────────────────────────────────────── */
+
+.loading,
+.error,
+.empty {
+  color: var(--color-text-muted);
+  padding: 20px 0;
+  font-size: 14px;
 }
 
 .error {

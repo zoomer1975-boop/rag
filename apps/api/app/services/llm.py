@@ -57,6 +57,7 @@ class LLMClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        usage_out: dict[str, int] | None = None,
     ) -> str:
         """일반 채팅 완성 (단일 응답)"""
         response = await self._client.chat.completions.create(
@@ -65,6 +66,9 @@ class LLMClient:
             temperature=temperature if temperature is not None else settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
         )
+        if usage_out is not None and response.usage:
+            usage_out["input_tokens"] = response.usage.prompt_tokens or 0
+            usage_out["output_tokens"] = response.usage.completion_tokens or 0
         content = response.choices[0].message.content or ""
         return strip_thinking_tokens(content)
 
@@ -161,18 +165,25 @@ class LLMClient:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        usage_out: dict[str, int] | None = None,
     ) -> AsyncGenerator[str, None]:
         """스트리밍 채팅 완성 — 토큰 단위로 yield.
 
         Gemma4 vLLM의 thinking 블록(<|channel>thought...<channel|>)을
         감지해 사용자에게 노출하지 않는다.
+        usage_out이 주어지면 스트리밍 완료 후 input_tokens/output_tokens를 채운다.
         """
+        stream_kwargs: dict[str, Any] = {}
+        if usage_out is not None:
+            stream_kwargs["stream_options"] = {"include_usage": True}
+
         stream = await self._client.chat.completions.create(
             model=model or settings.llm_model,
             messages=messages,
             temperature=temperature if temperature is not None else settings.llm_temperature,
             max_tokens=max_tokens or settings.llm_max_tokens,
             stream=True,
+            **stream_kwargs,
         )
 
         # thinking 블록이 스트림 앞부분에 나타나면 버퍼에 모아 두었다가
@@ -182,6 +193,12 @@ class LLMClient:
         thinking_done = False
 
         async for chunk in stream:
+            # 마지막 usage 청크: choices가 비어있고 usage만 있음
+            if not chunk.choices:
+                if usage_out is not None and chunk.usage:
+                    usage_out["input_tokens"] = chunk.usage.prompt_tokens or 0
+                    usage_out["output_tokens"] = chunk.usage.completion_tokens or 0
+                continue
             delta = chunk.choices[0].delta.content
             if not delta:
                 continue

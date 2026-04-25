@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -406,6 +407,8 @@ async def _stream_response(
     safeguard_blocked_message: str = "",
 ) -> AsyncGenerator[str, None]:
     full_response = ""
+    usage_out: dict[str, int] = {}
+    llm_start = time.monotonic()
 
     # 세션 ID 먼저 전송
     yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
@@ -440,7 +443,7 @@ async def _stream_response(
                             yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
                     else:
                         # 케이스 A: tool history 없음 → chat_stream으로 실제 스트리밍 가능
-                        async for token in llm_client.chat_stream(current_messages):
+                        async for token in llm_client.chat_stream(current_messages, usage_out=usage_out):
                             full_response += token
                             yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
                     break
@@ -486,12 +489,12 @@ async def _stream_response(
                 # 최대 횟수 초과 — tool history가 있는 messages를 tools 없이 chat_stream에
                 # 보내면 vLLM/Ollama 오류 발생하므로 안정적인 chat()으로 최종 응답 요청
                 logger.warning("tool calling 최대 횟수(%d) 초과, 강제 종료", MAX_TOOL_CALLS_PER_CHAT)
-                full_response = await llm_client.chat(messages=current_messages)
+                full_response = await llm_client.chat(messages=current_messages, usage_out=usage_out)
                 yield f"data: {json.dumps({'type': 'token', 'content': full_response})}\n\n"
 
         else:
             # tool 없는 테넌트 — 기존 스트리밍 흐름 유지
-            async for token in llm_client.chat_stream(messages):
+            async for token in llm_client.chat_stream(messages, usage_out=usage_out):
                 full_response += token
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
@@ -499,6 +502,8 @@ async def _stream_response(
         await ls_logger.log_llm_end(run_id=ls_llm_run_id, response="", error=str(exc))
         await ls_logger.end_trace(run_id=ls_run_id, error=str(exc))
         raise
+
+    latency_ms = int((time.monotonic() - llm_start) * 1000)
 
     # LLM 출력 safeguard 검사 — 유해 출력이면 클라이언트에 교체 지시
     if safeguard_client is not None and full_response:
@@ -521,11 +526,22 @@ async def _stream_response(
     await ls_logger.end_trace(run_id=ls_run_id, outputs={"response": full_response, "sources_count": len(sources)})
 
     # 응답 저장 (백그라운드)
-    await _save_assistant_message(conversation_id, full_response, sources, enc_dek=enc_dek)
+    await _save_assistant_message(
+        conversation_id, full_response, sources, enc_dek=enc_dek,
+        input_tokens=usage_out.get("input_tokens"),
+        output_tokens=usage_out.get("output_tokens"),
+        latency_ms=latency_ms,
+    )
 
 
 async def _save_assistant_message(
-    conversation_id: int, content: str, sources: list[dict], enc_dek: bytes | None = None
+    conversation_id: int,
+    content: str,
+    sources: list[dict],
+    enc_dek: bytes | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    latency_ms: int | None = None,
 ) -> None:
     from app.db.session import AsyncSessionLocal
     from app.services.conv_encryption import get_encryptor
@@ -539,6 +555,9 @@ async def _save_assistant_message(
             content=None if content_enc else content,
             content_enc=content_enc,
             sources=sources,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
         )
         db.add(msg)
         await db.commit()

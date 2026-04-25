@@ -30,13 +30,13 @@ services:
     restart: unless-stopped
 
   safeguard:
-    # image: vllm/vllm-openai:latest
-    image: vllm/vllm-openai:v0.6.6.post1
+    image: vllm/vllm-openai:latest
+    #image: vllm/vllm-openai:v0.6.6.post1
     command: >
       --model kakaocorp/kanana-safeguard-prompt-2.1b
       --port 8001
       --max-model-len 4096
-      --dtype half
+      --dtype bfloat16
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
