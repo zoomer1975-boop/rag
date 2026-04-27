@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.middleware.auth import verify_admin
+from app.models.tenant import Tenant
 from app.models.tenant_api_tool import MAX_TOOLS_PER_TENANT, TenantApiTool
 from app.services.encryption import decrypt, encrypt, mask_header_values
 
@@ -162,15 +163,17 @@ async def create_api_tool(
     _: None = Depends(verify_admin),
 ):
     """API Tool 등록"""
-    # 개수 제한 확인
+    # 개수 제한 확인 (테넌트별 설정 우선, None이면 전역 상수 폴백)
     count_result = await db.execute(
         select(TenantApiTool).where(TenantApiTool.tenant_id == tenant_id)
     )
     existing = count_result.scalars().all()
-    if len(existing) >= MAX_TOOLS_PER_TENANT:
+    tenant = await db.get(Tenant, tenant_id)
+    max_tools = tenant.max_api_tools if tenant and tenant.max_api_tools is not None else MAX_TOOLS_PER_TENANT
+    if max_tools and len(existing) >= max_tools:  # max_tools=0 = 무제한
         raise HTTPException(
             status_code=400,
-            detail=f"API Tool은 테넌트당 최대 {MAX_TOOLS_PER_TENANT}개까지 등록할 수 있습니다.",
+            detail=f"API Tool 등록 한도({max_tools}개)에 도달했습니다.",
         )
 
     # 이름 중복 확인

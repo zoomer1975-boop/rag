@@ -64,6 +64,12 @@ class Tenant(Base):
     # 대화 암호화 — MEK로 감싼 DEK (Envelope Encryption)
     encrypted_dek: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # 테넌트별 제한 설정 (None = 전역 설정 상속, 0 = 무제한, 양수 = 해당 값으로 제한)
+    rate_limit_requests: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rate_limit_window: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_documents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_api_tools: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

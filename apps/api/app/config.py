@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
 
+    # 문서 수 제한 기본값 (0 = 무제한)
+    max_documents: int = 0
+
     # 파일 업로드
     upload_dir: str = "./uploads"
     max_upload_size_mb: int = 50
