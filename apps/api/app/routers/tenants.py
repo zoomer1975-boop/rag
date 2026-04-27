@@ -38,7 +38,9 @@ def _detect_image_ext(data: bytes) -> str | None:
     return None
 
 import logging
+import math
 
+import redis.asyncio as aioredis
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,6 +81,10 @@ class TenantCreate(BaseModel):
     allowed_domains: str = ""
     widget_config: dict = Field(default_factory=dict)
     langsmith_api_key: str | None = None
+    rate_limit_requests: int | None = None
+    rate_limit_window: int | None = None
+    max_documents: int | None = None
+    max_api_tools: int | None = None
 
 
 class TenantUpdate(BaseModel):
@@ -95,6 +101,10 @@ class TenantUpdate(BaseModel):
     clarification_enabled: bool | None = None
     clarification_config: dict | None = None
     pii_config: dict | None = None
+    rate_limit_requests: int | None = None
+    rate_limit_window: int | None = None
+    max_documents: int | None = None
+    max_api_tools: int | None = None
 
 
 class TenantResponse(BaseModel):
@@ -113,6 +123,10 @@ class TenantResponse(BaseModel):
     clarification_enabled: bool = False
     clarification_config: dict | None = None
     pii_config: dict | None = None
+    rate_limit_requests: int | None = None
+    rate_limit_window: int | None = None
+    max_documents: int | None = None
+    max_api_tools: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -134,7 +148,24 @@ class TenantResponse(BaseModel):
             clarification_enabled=tenant.clarification_enabled,
             clarification_config=tenant.clarification_config,
             pii_config=tenant.pii_config,
+            rate_limit_requests=tenant.rate_limit_requests,
+            rate_limit_window=tenant.rate_limit_window,
+            max_documents=tenant.max_documents,
+            max_api_tools=tenant.max_api_tools,
         )
+
+
+async def _sync_rate_limit_cache(tenant: "Tenant") -> None:
+    """테넌트 rate limit 설정을 Redis 캐시에 동기화."""
+    settings = get_settings()
+    cfg_requests = tenant.rate_limit_requests if tenant.rate_limit_requests is not None else settings.rate_limit_requests
+    cfg_window = tenant.rate_limit_window if tenant.rate_limit_window is not None else settings.rate_limit_window
+    try:
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.set(f"rl_cfg:{tenant.api_key}", f"{cfg_requests}:{cfg_window}", ex=86400)
+        await r.aclose()
+    except Exception:
+        logger.warning("rate limit 캐시 동기화 실패 (tenant_id=%d) — 무시하고 계속", tenant.id)
 
 
 @router.get("/", response_model=list[TenantResponse])
@@ -175,6 +206,7 @@ async def create_tenant(
     db.add(tenant)
     await db.flush()
     await db.refresh(tenant)
+    await _sync_rate_limit_cache(tenant)
     return TenantResponse.from_tenant(tenant)
 
 
@@ -222,6 +254,7 @@ async def update_tenant(
 
     await db.flush()
     await db.refresh(tenant)
+    await _sync_rate_limit_cache(tenant)
     return TenantResponse.from_tenant(tenant)
 
 

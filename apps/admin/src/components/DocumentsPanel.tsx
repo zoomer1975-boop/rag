@@ -34,11 +34,23 @@ function formatDatetime(iso: string | null): string {
   });
 }
 
+function parseApiError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(msg) as { detail?: string };
+    if (parsed.detail) return parsed.detail;
+  } catch {
+    // not JSON — use as-is
+  }
+  return msg;
+}
+
 export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
   const [docs, setDocs] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [urlInput, setUrlInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [ingestError, setIngestError] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
@@ -70,6 +82,7 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
     e.preventDefault();
     if (!urlInput.trim()) return;
     setSubmitting(true);
+    setIngestError(null);
     try {
       const doc = await apiFetch<Document>("/ingest/url", apiKey, {
         method: "POST",
@@ -77,6 +90,8 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
       });
       setDocs((prev) => [doc, ...prev]);
       setUrlInput("");
+    } catch (err) {
+      setIngestError(parseApiError(err));
     } finally {
       setSubmitting(false);
     }
@@ -86,6 +101,7 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setSubmitting(true);
+    setIngestError(null);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -97,6 +113,8 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
       if (!res.ok) throw new Error(await res.text());
       const doc: Document = await res.json();
       setDocs((prev) => [doc, ...prev]);
+    } catch (err) {
+      setIngestError(parseApiError(err));
     } finally {
       setSubmitting(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -157,6 +175,13 @@ export default function DocumentsPanel({ apiKey }: { apiKey: string }) {
           {submitting && <span className={styles.hint}>업로드 중…</span>}
         </div>
       </section>
+
+      {ingestError && (
+        <div className={styles.errorBanner} role="alert">
+          {ingestError}
+          <button className={styles.errorClose} onClick={() => setIngestError(null)} aria-label="닫기">×</button>
+        </div>
+      )}
 
       <section className={styles.section}>
         <div className={styles.listHeader}>

@@ -117,6 +117,7 @@ export default function Home() {
         apiKey={apiKey}
         onBack={() => setView("tenants")}
         onTenantUpdate={(updated) => setTenant(updated)}
+        isSuperadmin={session?.is_superadmin ?? false}
       />
     );
   }

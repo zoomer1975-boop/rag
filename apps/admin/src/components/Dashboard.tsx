@@ -11,12 +11,13 @@ import ChatTestPanel from "./ChatTestPanel";
 import ApiToolsPanel from "./ApiToolsPanel";
 import BoilerplatePanel from "./BoilerplatePanel";
 import GraphPanel from "./GraphPanel";
+import RateLimitPanel from "./RateLimitPanel";
 import LogoutButton from "./LogoutButton";
 import styles from "./Dashboard.module.css";
 
-type Tab = "stats" | "documents" | "settings" | "boilerplate" | "widget" | "history" | "chat" | "tools" | "graph";
+type Tab = "stats" | "documents" | "settings" | "boilerplate" | "widget" | "history" | "chat" | "tools" | "graph" | "limits";
 
-const TABS: { id: Tab; label: string }[] = [
+const BASE_TABS: { id: Tab; label: string }[] = [
   { id: "stats", label: "통계" },
   { id: "documents", label: "문서 관리" },
   { id: "settings", label: "설정" },
@@ -33,10 +34,12 @@ interface Props {
   apiKey: string;
   onBack: () => void;
   onTenantUpdate: (t: Tenant) => void;
+  isSuperadmin?: boolean;
 }
 
-export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Props) {
+export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate, isSuperadmin }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("stats");
+  const TABS = isSuperadmin ? [...BASE_TABS, { id: "limits" as const, label: "제한 설정" }] : BASE_TABS;
 
   return (
     <div className={styles.root}>
@@ -73,6 +76,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate }: Pr
         {activeTab === "boilerplate" && <BoilerplatePanel tenantId={tenant.id} />}
         {activeTab === "tools" && <ApiToolsPanel tenant={tenant} />}
         {activeTab === "graph" && <GraphPanel apiKey={apiKey} />}
+        {activeTab === "limits" && <RateLimitPanel tenant={tenant} onUpdated={onTenantUpdate} />}
       </main>
     </div>
   );

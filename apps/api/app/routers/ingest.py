@@ -55,6 +55,16 @@ class DocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+async def _check_document_limit(tenant: Tenant, db: AsyncSession) -> None:
+    """테넌트 문서 수 한도 초과 시 HTTPException 발생."""
+    max_docs = tenant.max_documents if tenant.max_documents is not None else settings.max_documents
+    if not max_docs:  # 0 또는 None(전역 기본 0) = 무제한
+        return
+    count = await db.scalar(select(func.count()).where(Document.tenant_id == tenant.id))
+    if count >= max_docs:
+        raise HTTPException(status_code=413, detail=f"문서 수 한도({max_docs}개)에 도달했습니다.")
+
+
 @router.post("/url", response_model=DocumentResponse, status_code=202)
 async def ingest_url(
     body: URLIngestRequest,
@@ -64,6 +74,8 @@ async def ingest_url(
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     llm_client: LLMClient = Depends(get_llm_client),
 ):
+    await _check_document_limit(tenant, db)
+
     url_str = str(body.url)
     block_reason: str | None = None
     try:
@@ -103,6 +115,8 @@ async def ingest_file(
     embedding_client: EmbeddingClient = Depends(get_embedding_client),
     llm_client: LLMClient = Depends(get_llm_client),
 ):
+    await _check_document_limit(tenant, db)
+
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(

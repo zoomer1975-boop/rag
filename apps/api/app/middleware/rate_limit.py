@@ -5,6 +5,7 @@ Redis 장애 시 인메모리 슬라이딩 윈도우로 자동 전환(degraded m
 
 import asyncio
 import logging
+import math
 import time
 from collections import defaultdict
 
@@ -61,18 +62,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._redis
 
-    def _rate_limit_response(self, reset_at: int) -> Response:
+    def _rate_limit_response(self, reset_at: int, limit: int, window: int) -> Response:
+        remaining_secs = max(0, reset_at - int(time.time()))
+        remaining_mins = math.ceil(remaining_secs / 60)
+        detail = f"현재 사용 가능한 limit에 도달하였습니다. {remaining_mins}분 후 재개됩니다."
         return Response(
-            content='{"detail":"요청 한도를 초과했습니다. 잠시 후 다시 시도하세요."}',
+            content=f'{{"detail":"{detail}"}}',
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             media_type="application/json",
             headers={
-                "X-RateLimit-Limit": str(self._limit),
+                "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": "0",
                 "X-RateLimit-Reset": str(reset_at),
-                "Retry-After": str(self._window),
+                "Retry-After": str(window),
             },
         )
+
+    async def _get_tenant_limit(self, redis: aioredis.Redis, api_key: str) -> tuple[int, int]:
+        """테넌트별 rate limit 설정 조회. 캐시 미스 시 전역 값 반환."""
+        try:
+            cfg = await redis.get(f"rl_cfg:{api_key}")
+            if cfg:
+                parts = cfg.split(":")
+                return int(parts[0]), int(parts[1])
+        except Exception:
+            pass
+        return self._limit, self._window
 
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.url.path
@@ -85,26 +100,32 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         try:
             redis = await self._get_redis()
+            limit, window = await self._get_tenant_limit(redis, api_key)
+
+            # 0 = 무제한 — rate limit 체크 건너뜀
+            if limit == 0:
+                return await call_next(request)
+
             now = time.time()
-            window_start = now - self._window
+            window_start = now - window
             redis_key = f"rl:{api_key}"
 
             pipe = redis.pipeline()
             pipe.zremrangebyscore(redis_key, "-inf", window_start)
             pipe.zadd(redis_key, {str(now): now})
             pipe.zcard(redis_key)
-            pipe.expire(redis_key, self._window)
+            pipe.expire(redis_key, window)
             results = await pipe.execute()
             request_count = results[2]
 
-            remaining = max(0, self._limit - request_count)
-            reset_at = int(now) + self._window
+            remaining = max(0, limit - request_count)
+            reset_at = int(now) + window
 
-            if request_count > self._limit:
-                return self._rate_limit_response(reset_at)
+            if request_count > limit:
+                return self._rate_limit_response(reset_at, limit, window)
 
             response = await call_next(request)
-            response.headers["X-RateLimit-Limit"] = str(self._limit)
+            response.headers["X-RateLimit-Limit"] = str(limit)
             response.headers["X-RateLimit-Remaining"] = str(remaining)
             response.headers["X-RateLimit-Reset"] = str(reset_at)
             return response
@@ -117,7 +138,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 api_key, self._limit, self._window
             )
             if exceeded:
-                return self._rate_limit_response(reset_at)
+                return self._rate_limit_response(reset_at, self._limit, self._window)
 
             response = await call_next(request)
             remaining = max(0, self._limit - count)

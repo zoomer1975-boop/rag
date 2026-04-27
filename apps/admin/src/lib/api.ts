@@ -84,6 +84,10 @@ export interface Tenant {
   has_langsmith: boolean;
   clarification_enabled: boolean;
   clarification_config: Record<string, unknown> | null;
+  rate_limit_requests?: number | null;
+  rate_limit_window?: number | null;
+  max_documents?: number | null;
+  max_api_tools?: number | null;
 }
 
 export interface WidgetConfig {

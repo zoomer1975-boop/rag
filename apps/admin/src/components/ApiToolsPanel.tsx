@@ -5,7 +5,7 @@ import { adminFetch, type ApiTool, type Tenant } from "@/lib/api";
 import styles from "./ApiToolsPanel.module.css";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const MAX_TOOLS = 10;
+const DEFAULT_MAX_TOOLS = 10;
 
 interface Props {
   tenant: Tenant;
@@ -81,6 +81,9 @@ export default function ApiToolsPanel({ tenant }: Props) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const maxTools = tenant.max_api_tools ?? DEFAULT_MAX_TOOLS;
+  const atLimit = tools.length >= maxTools;
 
   // JSON validation errors per field
   const headersJson = tryParseJson(form.headers);
@@ -201,9 +204,9 @@ export default function ApiToolsPanel({ tenant }: Props) {
         <button
           className={styles.btnPrimary}
           onClick={openNew}
-          disabled={tools.length >= MAX_TOOLS || showForm}
+          disabled={atLimit || showForm}
         >
-          + 새 도구 추가 ({tools.length}/{MAX_TOOLS})
+          + 새 도구 추가 ({tools.length}/{maxTools})
         </button>
       </div>
 
@@ -211,6 +214,12 @@ export default function ApiToolsPanel({ tenant }: Props) {
         LLM이 채팅 중 외부 API를 직접 호출할 수 있는 도구를 등록합니다.
         등록된 도구는 RAG 응답 생성 시 OpenAI function calling으로 제공됩니다.
       </p>
+
+      {atLimit && !showForm && (
+        <div className={styles.limitBanner} role="alert">
+          도구 등록 한도({maxTools}개)에 도달했습니다. 기존 도구를 삭제한 후 추가할 수 있습니다.
+        </div>
+      )}
 
       {/* ── New / Edit form ── */}
       {showForm && (
