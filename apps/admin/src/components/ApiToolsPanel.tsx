@@ -154,6 +154,7 @@ export default function ApiToolsPanel({ tenant }: Props) {
         });
         setTools((prev) => [...prev, created]);
       } else {
+        payload.name = form.name;
         const updated = await adminFetch<ApiTool>(
           `/tenants/${tenant.id}/api-tools/${editingId}`,
           { method: "PATCH", body: JSON.stringify(payload) }
@@ -242,9 +243,8 @@ export default function ApiToolsPanel({ tenant }: Props) {
                   pattern="^[a-z][a-z0-9_]{0,63}$"
                   title="소문자 영문으로 시작, 소문자/숫자/언더스코어만 허용"
                   required
-                  disabled={editingId !== null}
                 />
-                <p className={styles.hint}>소문자 영문 시작, 언더스코어 허용 (편집 불가)</p>
+                <p className={styles.hint}>소문자 영문 시작, 언더스코어 허용</p>
               </div>
 
               <div className={styles.field}>

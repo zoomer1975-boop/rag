@@ -56,6 +56,7 @@ class ApiToolCreate(BaseModel):
 
 
 class ApiToolUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=64)
     description: str | None = Field(None, min_length=1, max_length=500)
     http_method: str | None = Field(None, max_length=10)
     url_template: str | None = Field(None, min_length=1, max_length=2000)
@@ -65,6 +66,15 @@ class ApiToolUpdate(BaseModel):
     response_jmespath: str | None = Field(None, max_length=500)
     timeout_seconds: int | None = Field(None, ge=1, le=_MAX_TIMEOUT)
     is_active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not _NAME_RE.match(v):
+            raise ValueError("name은 소문자 영문으로 시작하고 소문자/숫자/언더스코어만 허용됩니다.")
+        return v
 
     @field_validator("http_method")
     @classmethod
@@ -220,7 +230,18 @@ async def update_api_tool(
     """API Tool 수정"""
     tool = await _get_tool_or_404(tool_id, tenant_id, db)
 
-    update_data = body.model_dump(exclude_none=True)
+    update_data = body.model_dump(exclude_unset=True)
+
+    # name 변경 시 중복 체크
+    if "name" in update_data and update_data["name"] != tool.name:
+        dup = await db.execute(
+            select(TenantApiTool).where(
+                TenantApiTool.tenant_id == tenant_id,
+                TenantApiTool.name == update_data["name"],
+            )
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail=f"'{update_data['name']}' 이름의 API Tool이 이미 존재합니다.")
 
     # headers는 별도 처리 (암호화)
     if "headers" in update_data:
