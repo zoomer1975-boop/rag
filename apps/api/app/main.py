@@ -72,6 +72,14 @@ app.include_router(boilerplate.router)
 app.include_router(graph.router)
 
 
+@app.get("/chat")
+async def serve_chat_standalone():
+    file_path = WIDGET_DIR / "chat-standalone.html"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(file_path), media_type="text/html")
+
+
 @app.get("/widget/{filename}")
 async def serve_widget(filename: str):
     # path traversal 방지

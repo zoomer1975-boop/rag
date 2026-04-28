@@ -20,6 +20,52 @@
   color: var(--color-accent);
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+}
+
+.tabBtn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.tabBtn:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.tabBtnActive {
+  color: var(--color-text);
+  background: var(--color-surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.cspNote {
+  font-size: 12px;
+  color: var(--color-accent);
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
 .codeBlock {
   position: relative;
   background: #0d0f17;
