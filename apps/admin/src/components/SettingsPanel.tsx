@@ -63,12 +63,19 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
   const [iconPreviewUrl, setIconPreviewUrl] = useState<string | null>(
     tenant.widget_config.button_icon_url ?? null
   );
+  // 실제 서버에 저장된 아이콘 URL (save() 시 widget_config에 포함)
+  const [savedIconUrl, setSavedIconUrl] = useState<string | null>(
+    tenant.widget_config.button_icon_url ?? null
+  );
+  const [iconLoadError, setIconLoadError] = useState(false);
 
   // tenant prop이 외부에서 갱신될 때 아이콘 상태 동기화
   useEffect(() => {
     const url = tenant.widget_config.button_icon_url ?? null;
     setIconPreviewUrl(url);
+    setSavedIconUrl(url);
     if (url) setIconMode("custom");
+    else setIconMode("default");
   }, [tenant.widget_config.button_icon_url]);
   const [iconUploading, setIconUploading] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
@@ -105,9 +112,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
           placeholder: form.widget_placeholder,
           position: form.widget_position,
           quick_replies: form.quick_replies,
-          ...(tenant.widget_config.button_icon_url
-            ? { button_icon_url: tenant.widget_config.button_icon_url }
-            : {}),
+          ...(savedIconUrl ? { button_icon_url: savedIconUrl } : {}),
         },
       };
       if (langsmithKeyTouched) {
@@ -167,6 +172,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
     setIconError(null);
+    setIconLoadError(false);
 
     // 이전 ObjectURL 해제
     if (prevObjectUrlRef.current) {
@@ -191,7 +197,10 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
         prevObjectUrlRef.current = null;
       }
       setIconFile(null);
-      setIconPreviewUrl(updated.widget_config.button_icon_url ?? null);
+      const serverUrl = updated.widget_config.button_icon_url ?? null;
+      setIconPreviewUrl(serverUrl);
+      setSavedIconUrl(serverUrl);
+      setIconLoadError(false);
       if (iconInputRef.current) iconInputRef.current.value = "";
     } catch (e) {
       setIconError(e instanceof Error ? e.message : "업로드 실패");
@@ -210,6 +219,8 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
       setIconMode("default");
       setIconFile(null);
       setIconPreviewUrl(null);
+      setSavedIconUrl(null);
+      setIconLoadError(false);
       if (prevObjectUrlRef.current) {
         URL.revokeObjectURL(prevObjectUrlRef.current);
         prevObjectUrlRef.current = null;
@@ -374,10 +385,11 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             <div className={styles.iconPreviewBox} style={{ background: form.widget_primary_color }}>
               {iconMode === "custom" && iconPreviewUrl ? (
                 <img
+                  key={iconPreviewUrl}
                   src={iconPreviewUrl}
                   alt="아이콘 미리보기"
                   style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", display: "block" }}
-                  onError={() => setIconMode("default")}
+                  onError={() => setIconLoadError(true)}
                 />
               ) : (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff">
@@ -387,6 +399,11 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
             </div>
             <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>56×56px 미리보기</span>
           </div>
+          {iconLoadError && (
+            <p style={{ fontSize: 12, color: "var(--color-danger, #e53e3e)", marginTop: 4 }}>
+              아이콘 미리보기를 불러올 수 없습니다. 파일은 서버에 저장되었습니다.
+            </p>
+          )}
 
           {iconMode === "custom" && (
             <div className={styles.iconUploadArea}>
