@@ -68,7 +68,7 @@ export default function Dashboard({ tenant, apiKey, onBack, onTenantUpdate, isSu
         {activeTab === "stats" && <StatsPanel apiKey={apiKey} />}
         {activeTab === "documents" && <DocumentsPanel apiKey={apiKey} />}
         {activeTab === "settings" && (
-          <SettingsPanel tenant={tenant} onUpdated={onTenantUpdate} />
+          <SettingsPanel tenant={tenant} onUpdated={onTenantUpdate} isSuperadmin={isSuperadmin} />
         )}
         {activeTab === "widget" && <WidgetPanel tenant={tenant} />}
         {activeTab === "history" && <ConversationHistoryPanel apiKey={apiKey} />}
