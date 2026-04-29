@@ -23,12 +23,23 @@ const LANG_OPTIONS = [
   { value: "th", label: "ภาษาไทย" },
 ];
 
+const ALL_PII_TYPES = [
+  { key: "NAME", label: "이름" },
+  { key: "ADDRESS", label: "주소" },
+  { key: "PHONE", label: "전화번호" },
+  { key: "EMAIL", label: "이메일" },
+  { key: "SSN", label: "주민번호" },
+  { key: "CARD", label: "카드번호" },
+  { key: "BRN", label: "사업자번호" },
+];
+
 interface Props {
   tenant: Tenant;
   onUpdated: (t: Tenant) => void;
+  isSuperadmin?: boolean;
 }
 
-export default function SettingsPanel({ tenant, onUpdated }: Props) {
+export default function SettingsPanel({ tenant, onUpdated, isSuperadmin }: Props) {
   const [form, setForm] = useState({
     name: tenant.name,
     system_prompt: tenant.system_prompt ?? "",
@@ -44,6 +55,10 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
     widget_position: tenant.widget_config.position,
     quick_replies: (tenant.widget_config.quick_replies ?? []) as string[],
     clarification_enabled: tenant.clarification_enabled,
+    pii_config: tenant.pii_config ?? {
+      enabled: true,
+      types: ALL_PII_TYPES.map((t) => t.key),
+    },
   });
   const [langsmithKey, setLangsmithKey] = useState("");
   const [langsmithKeyTouched, setLangsmithKeyTouched] = useState(false);
@@ -105,6 +120,7 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
         is_active: form.is_active,
         default_url_refresh_hours: form.default_url_refresh_hours,
         clarification_enabled: form.clarification_enabled,
+        pii_config: form.pii_config,
         widget_config: {
           primary_color: form.widget_primary_color,
           greeting: form.widget_greeting,
@@ -604,6 +620,55 @@ export default function SettingsPanel({ tenant, onUpdated }: Props) {
           </label>
         </Field>
       </fieldset>
+
+      {isSuperadmin && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>PII 마스킹</legend>
+          <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 12 }}>
+            사용자 메시지에서 개인식별정보를 탐지해 LLM 전달 전에 마스킹합니다.
+          </p>
+          <Field label="마스킹 사용">
+            <label className={styles.toggle}>
+              <input
+                type="checkbox"
+                checked={form.pii_config.enabled}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    pii_config: { ...prev.pii_config, enabled: e.target.checked },
+                  }))
+                }
+              />
+              <span>{form.pii_config.enabled ? "활성" : "비활성"}</span>
+            </label>
+          </Field>
+          <Field label="마스킹 항목">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {ALL_PII_TYPES.map(({ key, label }) => (
+                <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, opacity: form.pii_config.enabled ? 1 : 0.4 }}>
+                  <input
+                    type="checkbox"
+                    disabled={!form.pii_config.enabled}
+                    checked={form.pii_config.types.includes(key)}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        pii_config: {
+                          ...prev.pii_config,
+                          types: e.target.checked
+                            ? [...prev.pii_config.types, key]
+                            : prev.pii_config.types.filter((t) => t !== key),
+                        },
+                      }))
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </Field>
+        </fieldset>
+      )}
 
       <div className={styles.footer}>
         <button className={styles.btnPrimary} type="submit" disabled={saving}>

@@ -88,6 +88,10 @@ export interface Tenant {
   rate_limit_window?: number | null;
   max_documents?: number | null;
   max_api_tools?: number | null;
+  pii_config: {
+    enabled: boolean;
+    types: string[];
+  } | null;
 }
 
 export interface WidgetConfig {
