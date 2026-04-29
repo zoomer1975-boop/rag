@@ -30,6 +30,8 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadConversations = useCallback(
     async (newOffset: number) => {
@@ -46,7 +48,7 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
           setConversations((prev) => [...prev, ...data]);
         }
         setHasMore(data.length === PAGE_SIZE);
-        setOffset((prev) => prev + data.length);
+        setOffset(newOffset + data.length);
       } catch (err) {
         setError(err instanceof Error ? err.message : "대화 목록을 불러오지 못했습니다.");
       } finally {
@@ -105,6 +107,46 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
     });
   }
 
+  // ── 일괄 삭제 ────────────────────────────────────────────
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`${selectedIds.size}개 대화를 삭제하시겠습니까? 복구할 수 없습니다.`)) return;
+
+    const targets = conversations.filter((c) => selectedIds.has(c.id));
+    const session_ids = targets.map((c) => c.session_id);
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiFetch<void>("/analytics/conversations", apiKey, {
+        method: "DELETE",
+        body: JSON.stringify({ session_ids }),
+      });
+      setSelectedIds(new Set());
+      await loadConversations(0);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "삭제 실패");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // ── 단건 삭제 (상세 뷰) ──────────────────────────────────
+  async function handleDeleteSelected() {
+    if (!selected) return;
+    if (!confirm("이 대화를 삭제하시겠습니까? 복구할 수 없습니다.")) return;
+
+    try {
+      await apiFetch<void>(`/analytics/conversations/${selected.session_id}`, apiKey, {
+        method: "DELETE",
+      });
+      setSelected(null);
+      loadConversations(0);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "삭제 실패");
+    }
+  }
+
   // ── 일괄 다운로드 ────────────────────────────────────────
   async function handleBulkDownload() {
     const ids = [...selectedIds];
@@ -160,13 +202,22 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
           <button className={styles.back} onClick={() => setSelected(null)}>
             ← 목록으로
           </button>
-          <button
-            className={styles.downloadBtn}
-            onClick={handleSingleDownload}
-            disabled={msgLoading || messages.length === 0}
-          >
-            ↓ MD 다운로드
-          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              className={styles.downloadBtn}
+              onClick={handleSingleDownload}
+              disabled={msgLoading || messages.length === 0}
+            >
+              ↓ MD 다운로드
+            </button>
+            <button
+              className={styles.deleteBtn}
+              onClick={handleDeleteSelected}
+              disabled={msgLoading}
+            >
+              삭제
+            </button>
+          </div>
         </div>
         <div className={styles.threadHeader}>
           <span className={styles.sessionId}>{selected.session_id}</span>
@@ -229,9 +280,16 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
                 : `↓ MD 다운로드 (${selectedIds.size}개)`}
             </button>
             <button
+              className={styles.deleteBtn}
+              onClick={handleBulkDelete}
+              disabled={deleting || bulkDownloading}
+            >
+              {deleting ? "삭제 중…" : `삭제 (${selectedIds.size}개)`}
+            </button>
+            <button
               className={styles.cancelBtn}
               onClick={() => setSelectedIds(new Set())}
-              disabled={bulkDownloading}
+              disabled={deleting || bulkDownloading}
             >
               선택 해제
             </button>
@@ -240,6 +298,7 @@ export default function ConversationHistoryPanel({ apiKey }: Props) {
       </div>
 
       {bulkError && <p className={styles.bulkError}>{bulkError}</p>}
+      {deleteError && <p className={styles.bulkError}>{deleteError}</p>}
       {error && <p className={styles.empty}>{error}</p>}
 
       {conversations.length === 0 && !loading && !error ? (

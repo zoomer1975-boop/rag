@@ -4,7 +4,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import cast, Date, func, select
+from pydantic import BaseModel
+from sqlalchemy import cast, Date, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -175,6 +176,43 @@ async def get_conversation_messages(
         }
         for m in messages
     ]
+
+
+@router.delete("/conversations/{session_id}", status_code=204)
+async def delete_conversation(
+    session_id: str,
+    tenant: Tenant = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.tenant_id == tenant.id,
+            Conversation.session_id == session_id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if conv:
+        await db.delete(conv)
+        await db.commit()
+
+
+class BulkDeleteRequest(BaseModel):
+    session_ids: list[str]
+
+
+@router.delete("/conversations", status_code=204)
+async def bulk_delete_conversations(
+    body: BulkDeleteRequest,
+    tenant: Tenant = Depends(get_tenant),
+    db: AsyncSession = Depends(get_db),
+):
+    await db.execute(
+        delete(Conversation).where(
+            Conversation.tenant_id == tenant.id,
+            Conversation.session_id.in_(body.session_ids),
+        )
+    )
+    await db.commit()
 
 
 @router.get("/daily-usage")
