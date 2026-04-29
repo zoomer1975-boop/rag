@@ -50,16 +50,15 @@ export default function WidgetPanel({ tenant }: Props) {
   src="${chatUrl}"
   loading="lazy" title="챗봇"></iframe>`,
 
-    link: `<a href="${chatUrl}" target="_blank" rel="noopener">
-  <button style="position:fixed;bottom:24px;right:24px;width:64px;height:64px;
+    link: `<button onclick="window.open('${chatUrl}','ragchat','width=420,height=700,top=100,left=100,resizable=yes')"
+  style="position:fixed;bottom:24px;right:24px;width:64px;height:64px;
     border-radius:20px;background:linear-gradient(135deg,#6366f1,#a855f7);
     color:#fff;border:none;cursor:pointer;display:flex;align-items:center;
     justify-content:center;z-index:9999;box-shadow:0 8px 24px rgba(99,102,241,.4)">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
-      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-    </svg>
-  </button>
-</a>`,
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+  </svg>
+</button>`,
   };
 
   const tabLabels: Record<Tab, string> = {

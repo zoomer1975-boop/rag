@@ -112,8 +112,20 @@ async def chat(
 ):
     """SSE 스트리밍 채팅 엔드포인트"""
     # 도메인 화이트리스트 검증
+    # 서버 자신의 origin(독립형 채팅 페이지)은 화이트리스트 무관 허용
     origin = request.headers.get("origin")
-    if not is_origin_allowed(origin, tenant.allowed_domain_list):
+    server_host = (
+        request.headers.get("x-forwarded-host")
+        or request.headers.get("host", "")
+    ).split(":")[0]
+    origin_host: str | None = None
+    if origin:
+        try:
+            from urllib.parse import urlparse as _urlparse
+            origin_host = _urlparse(origin).hostname
+        except Exception:
+            pass
+    if origin_host != server_host and not is_origin_allowed(origin, tenant.allowed_domain_list):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="이 도메인은 위젯 사용이 허용되지 않았습니다.",
