@@ -18,6 +18,16 @@ export default function WidgetPanel({ tenant }: Props) {
   const scriptUrl = `${widgetOrigin}/rag/widget/chatbot.js`;
   const chatUrl = `${widgetOrigin}/rag/chat?apiKey=${tenant.api_key}`;
 
+  const rawIconUrl = tenant.widget_config.button_icon_url;
+  const iconAbsUrl = rawIconUrl
+    ? rawIconUrl.startsWith("http") ? rawIconUrl : `${widgetOrigin}${rawIconUrl}`
+    : null;
+  const iconHtml = iconAbsUrl
+    ? `<img src="${iconAbsUrl}" width="40" height="40" style="border-radius:50%;object-fit:cover;display:block" alt="챗봇">`
+    : `<svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+  </svg>`;
+
   const snippets: Record<Tab, string> = {
     script: `<script>
   window.RagChatConfig = {
@@ -41,9 +51,7 @@ export default function WidgetPanel({ tenant }: Props) {
 </style>
 <input type="checkbox" id="rc">
 <label class="rc-btn" for="rc">
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
-    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-  </svg>
+  ${iconHtml}
 </label>
 <label class="rc-overlay" for="rc"></label>
 <iframe class="rc-frame"
@@ -55,9 +63,7 @@ export default function WidgetPanel({ tenant }: Props) {
     border-radius:20px;background:linear-gradient(135deg,#6366f1,#a855f7);
     color:#fff;border:none;cursor:pointer;display:flex;align-items:center;
     justify-content:center;z-index:9999;box-shadow:0 8px 24px rgba(99,102,241,.4)">
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
-    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-  </svg>
+  ${iconHtml}
 </button>`,
   };
 
@@ -82,7 +88,18 @@ export default function WidgetPanel({ tenant }: Props) {
   };
 
   async function copy(tab: Tab) {
-    await navigator.clipboard.writeText(snippets[tab]);
+    const text = snippets[tab];
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
     setCopiedTab(tab);
     setTimeout(() => setCopiedTab(null), 2000);
   }
