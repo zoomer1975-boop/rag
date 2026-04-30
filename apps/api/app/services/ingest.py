@@ -128,15 +128,27 @@ class IngestService:
             )
             await self._save_chunks(document, chunks_data)
             await self._set_status(document, "completed", chunk_count=len(chunks_data))
+            self._delete_upload_file(document.file_path)
         except SecurityError:
             await self._db.rollback()
             await self._set_status(document, "failed", error="보안 정책에 의해 차단된 콘텐츠")
+            self._delete_upload_file(document.file_path)
             raise
         except Exception as exc:
             logger.exception("파일 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
             await self._db.rollback()
             await self._set_status(document, "failed", error=str(exc))
+            self._delete_upload_file(document.file_path)
             raise
+
+    @staticmethod
+    def _delete_upload_file(file_path: str | None) -> None:
+        if not file_path:
+            return
+        try:
+            Path(file_path).unlink(missing_ok=True)
+        except Exception:
+            logger.warning("업로드 파일 삭제 실패: %s", file_path)
 
     async def _save_chunks(self, document: Document, chunks_data: list[dict]) -> None:
         if not chunks_data:
