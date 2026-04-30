@@ -91,9 +91,12 @@ class IngestService:
 
             await self._set_status(document, "completed", chunk_count=total_chunks)
         except SecurityError:
+            await self._db.rollback()
+            await self._set_status(document, "failed", error="보안 정책에 의해 차단된 콘텐츠")
             raise
         except Exception as exc:
             logger.exception("URL 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
+            await self._db.rollback()
             await self._set_status(document, "failed", error=str(exc))
             raise
 
@@ -126,9 +129,12 @@ class IngestService:
             await self._save_chunks(document, chunks_data)
             await self._set_status(document, "completed", chunk_count=len(chunks_data))
         except SecurityError:
+            await self._db.rollback()
+            await self._set_status(document, "failed", error="보안 정책에 의해 차단된 콘텐츠")
             raise
         except Exception as exc:
             logger.exception("파일 인제스트 파이프라인 오류: doc_id=%d, %s", document.id, exc)
+            await self._db.rollback()
             await self._set_status(document, "failed", error=str(exc))
             raise
 

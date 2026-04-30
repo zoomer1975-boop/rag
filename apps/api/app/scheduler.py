@@ -46,19 +46,18 @@ async def _refresh_due_urls() -> None:
                 interval = document.refresh_interval_hours
                 service = IngestService(db=db, embedding_client=embedding_client)
                 await service.ingest_url(document, crawl_full_site=False)
-                await _update_refresh_timestamps(db, document.id, interval)
+                await _update_refresh_timestamps(db, document, interval)
                 logger.info("자동 갱신 완료: doc_id=%d", doc.id)
             except Exception as exc:
                 logger.exception("자동 갱신 실패: doc_id=%d error=%s", doc.id, exc)
 
 
-async def _update_refresh_timestamps(db, document) -> None:
+async def _update_refresh_timestamps(db, document, interval: int) -> None:
     from datetime import timedelta
     from sqlalchemy import update
     from app.models.document import Document
 
     now = datetime.now(timezone.utc)
-    interval = document.refresh_interval_hours
     next_refresh = (now + timedelta(hours=interval)) if interval > 0 else None
     await db.execute(
         update(Document)

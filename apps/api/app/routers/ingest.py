@@ -351,6 +351,7 @@ async def _run_url_ingest(
             logger.exception("URL 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
             # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트
             try:
+                await db.rollback()
                 await db.execute(
                     update(Document)
                     .where(Document.id == doc_id)
@@ -396,6 +397,7 @@ async def _run_file_ingest(doc_id: int, embedding_client: EmbeddingClient, llm_c
             logger.exception("파일 인제스트 실패: doc_id=%d, error=%s", doc_id, exc)
             # service 내부에서 실패를 기록하지 못했을 경우 최후 수단으로 직접 업데이트
             try:
+                await db.rollback()
                 await db.execute(
                     update(Document)
                     .where(Document.id == doc_id)

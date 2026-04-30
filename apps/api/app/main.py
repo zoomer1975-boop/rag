@@ -26,11 +26,35 @@ WIDGET_DIR = pathlib.Path(__file__).parent.parent / "static" / "widget"
 ICONS_DIR = pathlib.Path(__file__).parent.parent / "static" / "icons"
 
 
+async def _reset_stale_processing_documents() -> None:
+    """서버 재시작 시 이전 인스턴스에서 중단된 'processing' 상태 문서를 'failed'로 초기화."""
+    from sqlalchemy import update
+    from app.db.session import AsyncSessionLocal
+    from app.models.document import Document
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            update(Document)
+            .where(Document.status == "processing")
+            .values(status="failed", error_message="서버 재시작으로 인해 처리가 중단되었습니다.")
+            .returning(Document.id)
+        )
+        affected = result.fetchall()
+        if affected:
+            await db.commit()
+            logger.warning(
+                "재시작 시 처리 중단 문서 %d건을 'failed'로 초기화: ids=%s",
+                len(affected),
+                [r[0] for r in affected],
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.upload_dir, exist_ok=True)
     WIDGET_DIR.mkdir(parents=True, exist_ok=True)
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    await _reset_stale_processing_documents()
     start_scheduler()
     if settings.reranker_enabled:
         from app.services.reranker import get_reranker_service
